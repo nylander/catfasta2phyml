@@ -1,28 +1,15 @@
 #!/usr/bin/perl 
-#===============================================================================
-#
-#         FILE:  catfasta2phyml.pl
-#
-#        USAGE:  ./catfasta2phyml.pl *.fasta > out
-#
-#  DESCRIPTION:  Concatenates fasta alignments to a phyml file
-#
-#      OPTIONS:  ---
-# REQUIREMENTS:  ---
-#         BUGS:  ---
-#        NOTES:  ---
-#       AUTHOR:  Johan A. A. Nylander (JN), <jnylander @ users.sourceforge.net>
-#      COMPANY:  SU
-#      VERSION:  1.0
-#      CREATED:  03/12/2010 12:20:35 PM CET
-#     REVISION:  12/20/2012 10:38:42 AM
-#===============================================================================
+
+## 03/12/2010 12:20:35 PM CET
+## 02/18/2013 04:25:17 PM
+## TODO: print strict PHYLIP output
 
 use strict;
 use warnings;
 use Data::Dumper;
 use Pod::Usage;
 use Getopt::Long;
+Getopt::Long::Configure("bundling_override");
 
 
 #---------------------------------------------------------------------------
@@ -43,8 +30,9 @@ my $fasta            = 0;    # Print phyml format by default
 my $man              = 0;    # Manual
 my $help             = 0;    # Help
 my $verbose          = 0;    # Verbose
-my $dontprint        = 0;    # Do not print the concatenation
-my $relaxed_phylip   = 0;    # Print relaxed phylip format
+my $noprint          = 0;    # Do not print the concatenation
+my $sequential       = 0;    # Print sequential with line breaks in in sequence (default is interleaved) 
+my $strict_phylip    = 0;    # Print strict phylip format (http://evolution.genetics.washington.edu/phylip/doc/sequence.html)
 my $lwidth           = 60;   # default line width for fasta
 
 
@@ -55,12 +43,13 @@ if (@ARGV < 1) {
     die "No arguments. Try:\n\n $0 -man\n\n";
 }
 else {
-    GetOptions('help|?'         => sub { pod2usage(1) },
-               'man'            => sub { pod2usage(-exitstatus => 0, -verbose => 2) },
-               'fasta'          => \$fasta,
-               'verbose!'       => \$verbose,
-               'dont-print'     => \$dontprint,
-               'relaxed-phylip' => \$relaxed_phylip,
+    GetOptions('h|help|?'         => sub { pod2usage(1) },
+               'm|man'            => sub { pod2usage(-exitstatus => 0, -verbose => 2) },
+               'f|fasta'          => \$fasta,
+               'v|verbose'        => \$verbose,
+               'n|noprint'        => \$noprint,
+               's|sequential'     => \$sequential,
+               'p|phylip'         => \$strict_phylip,
               );
 }
 
@@ -68,16 +57,18 @@ else {
 #---------------------------------------------------------------------------
 #  Read all infiles to count sequences
 #---------------------------------------------------------------------------
-print STDERR "\nCecking sequences in infiles...\n" if ($verbose);
+print STDERR "\nCecking sequences in infiles...\n\n" if ($verbose);
 
 foreach my $arg (@ARGV) {
-    my $infile       = $arg;
-    my %seq_hash     = parse_fasta($infile); # key: seqid, value:sequence
+
+    my $infile  = $arg;
+    my %seq_hash = parse_fasta($infile); # key: seqid, value:sequence
+
+    print STDERR "  File $infile: " if ($verbose);
 
     $nfiles++;
 
-    ## Save sequences in array with hash references.
-    ## Does this work for really large number of fasta files?
+    ## Save sequences in array with hash references. Does this work for really large number of fasta files?
     my $hash_ref     = \%seq_hash;
     push(@hash_ref_array, $hash_ref);
 
@@ -107,6 +98,7 @@ foreach my $arg (@ARGV) {
             $lname  = $name;
         }
     }
+    print STDERR " ntax=$nseq_hash{$infile} nchar=$length\n" if ($verbose);
 
 } # Done with file
 
@@ -163,21 +155,25 @@ foreach my $h_ref (@hash_ref_array) {
 if ($verbose) {
     print STDERR "\nChecked $nfiles files -- sequence labels and lengths seems OK.\n";
     print STDERR "Concatenated $nseq sequences, length $nchar.\n";
-    print STDERR "Printing concatenation to STDOUT.\n\n" unless $dontprint;
+    print STDERR "Printing concatenation to STDOUT.\n\n" unless $noprint;
 }
 
 ## Noprint?
-if ($dontprint) {
-    print STDERR "\nEnd of script!\n\n" if ($verbose);
+if ($noprint) {
+    print STDERR "\nEnd of script.\n\n" if ($verbose);
     exit(1);
 }
 
 ## Phyml header?
-print STDOUT "$nseq $nchar\n" unless $fasta;
+if ($strict_phylip) {
+    print STDOUT "   $nseq    $nchar\n";
+}
+else {
+    print STDOUT "$nseq $nchar\n" unless $fasta;
+}
 
-## Print the array with hash references
-## (Does this work with really large number of files (hashes))?
-if ($fasta) {
+## Print the array with hash references (does this work with really large number of files (hashes))?
+if ($fasta or $sequential) {
     ## First, concatenate all sequences from hashes
     my %print_hash = (); # key:label, value:sequence
     foreach my $h_ref (@hash_ref_array) {
@@ -185,31 +181,46 @@ if ($fasta) {
             $print_hash{$seqid} .= $h_ref->{$seqid};
         }
     }
-    ## Then print, first add line breaks in sequences
+    ## Then print, and add line breaks in sequences
     foreach my $label (sort keys  %print_hash) {
+        if ($fasta) {
+            print STDOUT ">$label\n";
+        }
+        elsif ($strict_phylip) {
+            my $phylip_label = phylip_label($label);
+            print STDOUT "$phylip_label\n";
+        }
+        else {
+            print STDOUT "$label\n";
+        }
+        ## Print sequence
+        ## TODO: phylip strict printing of sequence in blocks of 10
         $print_hash{$label} =~ s/\S{$lwidth}/$&\n/gs; ## replace word of size $lwidth with itself and "\n"
-        print STDOUT ">$label\n";
         print STDOUT $print_hash{$label}, "\n";
     }
 }
-else {
+else { # default: phyml interleaved
     my $did_first = 0;
     foreach my $h_ref (@hash_ref_array) {
-        foreach my $seqid (sort keys %$h_ref){
-            if ($relaxed_phylip) {
-                printf STDOUT "%-${space}s ", $seqid unless $did_first;
+        foreach my $seqid (sort keys %$h_ref) {
+            if ($strict_phylip) {
+                my $phylip_seqid = phylip_label($seqid);
+                print STDOUT $phylip_seqid unless $did_first;
             }
             else {
-                printf STDOUT "%-${space}s ", $seqid;
+                printf STDOUT "%-${space}s ", $seqid unless $did_first;
             }
-            print  STDOUT "$h_ref->{$seqid}\n";
+            ## Print sequence
+            ## TODO: phylip strict printing of sequence in blocks of 10
+            ## TODO: print length of 60
+            print STDOUT "$h_ref->{$seqid}\n";
         }
-        print "\n\n";
+        print "\n";
         $did_first = 1;
     } 
 }
 
-print STDERR "End of script!\n\n" if ($verbose);
+print STDERR "End of script.\n\n" if ($verbose);
 
 
 #===  FUNCTION  ================================================================
@@ -244,8 +255,38 @@ sub parse_fasta {
 } # end of parse_fasta
 
 
+#===  FUNCTION  ================================================================
+#         NAME:  phylip_label
+#      VERSION:  02/18/2013 04:43:00 PM
+#  DESCRIPTION:  manipulates input string to be of length 10, possibly padded with
+#                white space.
+#   PARAMETERS:  string
+#      RETURNS:  string with the length of 10
+#         TODO:  ???
+#===============================================================================
+sub phylip_label {
+
+    my ($string) = @_;
+
+    if (length($string) > 10) {
+        $string = substr($string, 0, 10); # truncate label!
+    }
+    else {
+        my $string_length = length($string);
+        my $pad = ' ' x ((10 - $string_length)); # pad end with white space
+        $string = $string . $pad;
+    }
+
+    return($string);
+
+} # end of phylip_label
+
+
+
+
+
 #===  POD DOCUMENTATION  =======================================================
-#      VERSION:  11/07/2011 06:25:23 PM
+#      VERSION:  02/18/2013 04:44:16 PM
 #  DESCRIPTION:  Documentation
 #         TODO:  ?
 #===============================================================================
@@ -253,8 +294,7 @@ sub parse_fasta {
 
 =head1 NAME
 
-catfasta2phyml.pl  -- Concatenate FASTA alignments to PHYML or FASTA format
-
+catfasta2phyml.pl -- Concatenate FASTA alignments to PHYML or FASTA format
 
 
 =head1 SYNOPSIS
@@ -270,26 +310,34 @@ catfasta2phyml.pl [options] [files]
 
 Print a brief help message and exits.
 
+
 =item B<-m, --man>
 
 Prints the manual page and exits.
+
 
 =item B<-f, --fasta>
 
 Print output in FASTA format. Default is PHYML format.
 
-=item B<-r, --relaxed-phylip>
 
-Print output in relaxed PHYLIP format.
-That is, sequence labels are only printed once, and, the "relaxed", labels can have more than 8 characters.
+=item B<-p, --phylip>
+
+[Not fully implemented]
+Print output in a strict PHYLIP format.
+See http://evolution.genetics.washington.edu/phylip/doc/sequence.html.
+
+
 
 =item B<-v, --verbose>
 
-Be verbose.
+Be verbose by showing some useful output. See the combination with B<-n>.
 
-=item B<-d, --dont-print>
 
-Do not print the concatenation. Program returns 1 on exit.
+=item B<-n, --noprint>
+
+Do not print the concatenation, just check if all files have the same sequence lables and lengths.
+Program returns 1 on exit. See also the combination with B<-v>.
 
 
 =back
@@ -312,17 +360,19 @@ To concatenate fasta files to a phyml readable format:
 
     catfasta2phyml.pl file1.fas file2.fas > out.phy
     catfasta2phyml.pl *.fas > out.phy
+    catfasta2phyml.pl --sequential *.fas > out.phy
     catfasta2phyml.pl --verbose *.fas > out.phy
 
 To concatenate fasta files to fasta format:
 
-    catfasta2phyml.pl -f file1 file2 > out.fasta
+    catfasta2phyml.pl -f file1.fas file2.fas > out.fasta
     catfasta2phyml.pl -f *.fas > out.fasta
 
 To check fasta alignments
 
-    catfasta2phyml.pl --dont-print --verbose *.fasta
-    catfasta2phyml.pl -d *.fasta
+    catfasta2phyml.pl --noprint --verbose *.fas
+    catfasta2phyml.pl -nv *.fas
+    catfasta2phyml.pl -n *.fas
 
 
 =head1 AUTHOR
@@ -339,7 +389,7 @@ Uses Perl modules Getopt::Long and Pod::Usage
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright (c) 2010, 2011, 2012 Johan Nylander. All rights reserved.
+Copyright (c) 2010, 2011, 2012, 2013 Johan Nylander. All rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License

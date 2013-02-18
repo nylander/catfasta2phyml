@@ -1,17 +1,18 @@
 catfasta2phyml
 ==============
 
-Concatenates FASTA formatted files to one "phyml" (PHYLIP) formatted file
-
 
 NAME
+
     catfasta2phyml.pl -- Concatenate FASTA alignments to PHYML or FASTA
     format
 
 SYNOPSIS
+
     catfasta2phyml.pl [options] [files]
 
 OPTIONS
+
     -h, -?, --help
             Print a brief help message and exits.
 
@@ -21,18 +22,23 @@ OPTIONS
     -f, --fasta
             Print output in FASTA format. Default is PHYML format.
 
-    -r, --relaxed-phylip
-            Print output in relaxed PHYLIP format. That is, sequence labels
-            are only printed once, and, the "relaxed", labels can have more
-            than 8 characters.
+    -p, --phylip
+            [Not fully implemented] Print output in a strict PHYLIP format.
+            See
+            http://evolution.genetics.washington.edu/phylip/doc/sequence.htm
+            l.
 
     -v, --verbose
-            Be verbose.
+            Be verbose by showing some useful output. See the combination
+            with -n.
 
-    -d, --dont-print
-            Do not print the concatenation. Program returns 1 on exit.
+    -n, --noprint
+            Do not print the concatenation, just check if all files have the
+            same sequence lables and lengths. Program returns 1 on exit. See
+            also the combination with -v.
 
 DESCRIPTION
+
     catfasta2phyml.pl will concatenate FASTA alignments to one file
     (interleaved PHYML or FASTA format) after checking that all sequence
     labels are present in all files, and that sequences are aligned (of same
@@ -41,30 +47,37 @@ DESCRIPTION
     Prints to STDOUT.
 
 USAGE
+
     To concatenate fasta files to a phyml readable format:
 
         catfasta2phyml.pl file1.fas file2.fas > out.phy
         catfasta2phyml.pl *.fas > out.phy
+        catfasta2phyml.pl --sequential *.fas > out.phy
         catfasta2phyml.pl --verbose *.fas > out.phy
 
     To concatenate fasta files to fasta format:
 
-        catfasta2phyml.pl -f file1 file2 > out.fasta
+        catfasta2phyml.pl -f file1.fas file2.fas > out.fasta
         catfasta2phyml.pl -f *.fas > out.fasta
 
     To check fasta alignments
 
-        catfasta2phyml.pl --dont-print --verbose *.fasta
-        catfasta2phyml.pl -d *.fasta
+        catfasta2phyml.pl --noprint --verbose *.fas
+        catfasta2phyml.pl -nv *.fas
+        catfasta2phyml.pl -n *.fas
 
 AUTHOR
+
     Written by Johan A. A. Nylander
 
 DEPENDENCIES
+
     Uses Perl modules Getopt::Long and Pod::Usage
 
 LICENSE AND COPYRIGHT
-    Copyright (c) 2010, 2011, 2012 Johan Nylander. All rights reserved.
+
+    Copyright (c) 2010, 2011, 2012, 2013 Johan Nylander. All rights
+    reserved.
 
     This program is free software; you can redistribute it and/or modify it
     under the terms of the GNU General Public License as published by the
