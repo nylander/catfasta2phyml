@@ -1,15 +1,16 @@
 catfasta2phyml
 ==============
 
-
 NAME
 
     catfasta2phyml.pl -- Concatenate FASTA alignments to PHYML or FASTA
     format
 
+
 SYNOPSIS
 
     catfasta2phyml.pl [options] [files]
+
 
 OPTIONS
 
@@ -23,10 +24,13 @@ OPTIONS
             Print output in FASTA format. Default is PHYML format.
 
     -p, --phylip
-            [Not fully implemented] Print output in a strict PHYLIP format.
-            See
+            [Working, but not yet entirely strict...] Print output in a
+            strict PHYLIP format. See
             http://evolution.genetics.washington.edu/phylip/doc/sequence.htm
             l.
+
+    -s, --sequential
+            Print output in sequential format. Default is interleaved.
 
     -v, --verbose
             Be verbose by showing some useful output. See the combination
@@ -37,6 +41,7 @@ OPTIONS
             same sequence lables and lengths. Program returns 1 on exit. See
             also the combination with -v.
 
+
 DESCRIPTION
 
     catfasta2phyml.pl will concatenate FASTA alignments to one file
@@ -45,6 +50,7 @@ DESCRIPTION
     length).
 
     Prints to STDOUT.
+
 
 USAGE
 
@@ -66,13 +72,16 @@ USAGE
         catfasta2phyml.pl -nv *.fas
         catfasta2phyml.pl -n *.fas
 
+
 AUTHOR
 
     Written by Johan A. A. Nylander
 
+
 DEPENDENCIES
 
     Uses Perl modules Getopt::Long and Pod::Usage
+
 
 LICENSE AND COPYRIGHT
 

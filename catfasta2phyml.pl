@@ -1,7 +1,7 @@
 #!/usr/bin/perl 
 
 ## 03/12/2010 12:20:35 PM CET
-## 02/18/2013 04:25:17 PM
+## 02/21/2013 09:59:00 AM
 ## TODO: print strict PHYLIP output
 
 use strict;
@@ -286,7 +286,7 @@ sub phylip_label {
 
 
 #===  POD DOCUMENTATION  =======================================================
-#      VERSION:  02/18/2013 04:44:16 PM
+#      VERSION:  02/21/2013 09:54:51 AM
 #  DESCRIPTION:  Documentation
 #         TODO:  ?
 #===============================================================================
@@ -323,10 +323,14 @@ Print output in FASTA format. Default is PHYML format.
 
 =item B<-p, --phylip>
 
-[Not fully implemented]
+[Working, but not yet entirely strict...]
 Print output in a strict PHYLIP format.
 See http://evolution.genetics.washington.edu/phylip/doc/sequence.html.
 
+
+=item B<-s, --sequential>
+
+Print output in sequential format. Default is interleaved.
 
 
 =item B<-v, --verbose>
