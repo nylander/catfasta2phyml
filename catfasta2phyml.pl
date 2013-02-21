@@ -294,7 +294,7 @@ sub phylip_label {
 
 =head1 NAME
 
-catfasta2phyml.pl -- Concatenate FASTA alignments to PHYML or FASTA format
+catfasta2phyml.pl -- Concatenate FASTA alignments to PHYML, PHYLIP, or FASTA format
 
 
 =head1 SYNOPSIS
