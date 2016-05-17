@@ -92,7 +92,7 @@ DEPENDENCIES
 
 LICENSE AND COPYRIGHT
 
-    Copyright (c) 2010, 2011, 2012, 2013, 2014, 2015 Johan Nylander. All
+    Copyright (c) 2010, 2011, 2012, 2013, 2014, 2015, 2016 Johan Nylander. All
     rights reserved.
 
     This program is free software; you can redistribute it and/or modify it

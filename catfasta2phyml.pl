@@ -3,7 +3,7 @@
 
 ## 09/16/2015 04:57:30 PM
 ## TODO: print strict PHYLIP output if not -s
-##   ./catfasta2phyml-branch.pl -v -c -p testing2/* > infile
+##   ./catfasta2phyml-branch.pl -v -c -p testing2/* > outfile
 
 
 use strict;
@@ -31,7 +31,7 @@ Getopt::Long::Configure("bundling_override");
 # 
 # );
 ## ${HoH}{'file'}{'seqs'}{'apa'}
-my %HoH             = ();
+my %HoH              = ();
 my %seqids           = ();   # 
 my %nseq_hash        = ();   # key:infile, val:nseq
 my %nchar_hash       = ();   # key:infile, val:nchar (for aligned data)
@@ -39,7 +39,7 @@ my %seqid_count_hash = ();   # key:seqid, val:count
 my $term             = $/;   # input record separator
 my @hash_ref_array   = ();   # array with hash references
 my @all_labels_found = ();   # All unique labels in all files
-my @infiles          = ();
+my @infiles          = ();   # Infiles on ARGV
 my $nfiles           = 0;    # count number of files
 my $space            = "\t"; # spacer for aligned print
 my $nchar            = 0;    # nchar for phyml header.
@@ -82,11 +82,8 @@ print STDERR "\nChecking sequences in infiles...\n\n" if ($verbose);
 foreach my $infile (@ARGV) {
 
     my $seq_hash_ref = parse_fasta($infile); # key:seqid, value:sequence
-
     print STDERR "  File $infile: " if ($verbose);
-
     push (@infiles, $infile);
-
     $nfiles++;
 
     ## Are sequences aligned?
@@ -215,7 +212,8 @@ else {
 if ($fasta or $sequential) {
     ## First, concatenate all sequences from hashes
     my %print_hash = (); # key:label, value:sequence
-    foreach my $file (keys %HoH) {
+    foreach my $file (@infiles) { # Keep input order
+        die "Error: $file not in HoH\n" unless exists(${HoH}{$file});
         foreach my $seqid (keys %{${HoH}{$file}{'seqs'}}) {
             $print_hash{$seqid} .= $HoH{$file}{'seqs'}{$seqid}; # Concatenate seqs from files
         }
@@ -242,7 +240,8 @@ if ($fasta or $sequential) {
 }
 else { # default: phyml interleaved
     my $did_first = 0;
-    foreach my $file (keys %HoH) {
+    foreach my $file (@infiles) { # Keep input order
+        die "Error: $file not in HoH\n" unless exists(${HoH}{$file});
         foreach my $seqid (sort keys %{$HoH{$file}{'seqs'}}) {
             ## create an array with the sequence in pieces of 10. If strict phylip, shift 5 pieces when printing the first time
             ## if printing the other times, shift 6 pieces
@@ -537,7 +536,7 @@ Uses Perl modules Getopt::Long and Pod::Usage
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright (c) 2010, 2011, 2012, 2013, 2014, 2015 Johan Nylander. All rights reserved.
+Copyright (c) 2010, 2011, 2012, 2013, 2014, 2015, 2016 Johan Nylander. All rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
