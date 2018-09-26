@@ -1,9 +1,9 @@
 #!/usr/bin/perl 
 
 
-## 09/16/2015 04:57:30 PM
+## Wed 26 Sep 2018 06:00:55 PM CEST
 ## TODO: print strict PHYLIP output if not -s
-##   ./catfasta2phyml-branch.pl -v -c -p testing2/* > outfile
+##   ./catfasta2phyml.pl -v -c -p testing2/* > outfile
 
 
 use strict;
@@ -39,6 +39,7 @@ my %seqid_count_hash = ();   # key:seqid, val:count
 my $term             = $/;   # input record separator
 my @hash_ref_array   = ();   # array with hash references
 my @all_labels_found = ();   # All unique labels in all files
+my @intersect_labels = ();   # Labels occuring in all files (intersection)
 my @infiles          = ();   # Infiles on ARGV
 my $nfiles           = 0;    # count number of files
 my $space            = "\t"; # spacer for aligned print
@@ -46,6 +47,7 @@ my $nchar            = 0;    # nchar for phyml header.
 my $nseq             = 0;    # nseq for phyml header.
 my $fasta            = 0;    # Print phyml format by default
 my $concatenate      = 0;    # Concatenate after adding missing taxa
+my $intersect        = 0;    # Concatenate only intersecting taxa
 my $man              = 0;    # Manual
 my $help             = 0;    # Help
 my $verbose          = 0;    # Verbose
@@ -66,6 +68,7 @@ else {
                'm|man'            => sub { pod2usage(-exitstatus => 0, -verbose => 2) },
                'f|fasta'          => \$fasta,
                'c|concatenate'    => \$concatenate,
+               'i|intersect'      => \$intersect,
                'v|verbose'        => \$verbose,
                'n|noprint'        => \$noprint,
                's|sequential'     => \$sequential,
@@ -98,7 +101,7 @@ foreach my $infile (@ARGV) {
         $HoH{$infile}{'nchars'} = $ret[0];
     }
 
-    ## Save sequences from file(s) in one hash. Mem limit?
+    ## Save sequences from file(s) in one hash. TODO: Mem limit?
     foreach my $key (keys %$seq_hash_ref) {
         $HoH{$infile}{'seqs'}{$key} = ${$seq_hash_ref}{$key};
     }
@@ -118,10 +121,11 @@ foreach my $infile (@ARGV) {
 
 
 #---------------------------------------------------------------------------
-# Collect all taxon labels and find the length of longest name for printing
+# Collect taxon labels and find the length of longest name for printing
 #---------------------------------------------------------------------------
 (@all_labels_found) = sort { length($b) <=> length($a) } keys %seqid_count_hash;
 $space = length($all_labels_found[0]) + 2;
+
 
 
 #---------------------------------------------------------------------------
@@ -148,6 +152,10 @@ elsif ($concatenate) {
         $HoH{$file}{'nseqs'} = $nseq;
     }
 }
+elsif ($intersect) {
+    ($nseq) = sort { $b <=> $a } values %seqid_count_hash;
+    (@intersect_labels) = grep{ $seqid_count_hash{$_} eq $nseq } keys %seqid_count_hash;
+}
 else {
     print STDERR "\n";
     foreach my $key (sort { $seqid_count_hash{$a} <=> $seqid_count_hash{$b} } (keys %seqid_count_hash)) {
@@ -156,6 +164,7 @@ else {
     print STDERR "\nError! Some sequence labels does not occur in all files.\n";
     print STDERR "That is, sequence labels needs to be identical for safe concatenation.\n";
     print STDERR "Use the --concatenate (or -c) to concatenate anyway.\nEmpty (all gap) sequences will be added where needed.\n\n";
+    print STDERR "Alternatively, you may use --intersect (or -i) to concatenate sequence labels present in all files.\n\n";
     exit(1);
 }
 
@@ -168,7 +177,7 @@ if ($strict_phylip) {
     foreach my $label (@all_labels_found) {
         my $phylabel = phylip_label($label);
         if ($test{$phylabel}++) {
-            print STDERR "\nWarning! Sctrict Phylip format results in duplicate labels for these data (e.g., $phylabel)!\n";
+            print STDERR "\nWarning! Strict Phylip format results in duplicate labels for these data (e.g., $phylabel)!\n";
             exit(0);
         }
     }
@@ -214,11 +223,17 @@ if ($fasta or $sequential) {
     my %print_hash = (); # key:label, value:sequence
     foreach my $file (@infiles) { # Keep input order
         die "Error: $file not in HoH\n" unless exists(${HoH}{$file});
-        foreach my $seqid (keys %{${HoH}{$file}{'seqs'}}) {
+        my @seq_ids = ();
+        if ($intersect) {
+            @seq_ids = @intersect_labels;
+        }
+        else {
+            @seq_ids = keys %{$HoH{$file}{'seqs'}};
+        }
+        foreach my $seqid (@seq_ids) {
             $print_hash{$seqid} .= $HoH{$file}{'seqs'}{$seqid}; # Concatenate seqs from files
         }
     }
-
     ## Then print, and add line breaks in sequences
     foreach my $label (sort keys  %print_hash) {
         if ($fasta) {
@@ -242,7 +257,14 @@ else { # default: phyml interleaved
     my $did_first = 0;
     foreach my $file (@infiles) { # Keep input order
         die "Error: $file not in HoH\n" unless exists(${HoH}{$file});
-        foreach my $seqid (sort keys %{$HoH{$file}{'seqs'}}) {
+        my @seq_ids = ();
+        if ($intersect) {
+            @seq_ids = @intersect_labels;
+        }
+        else {
+            @seq_ids = sort keys %{$HoH{$file}{'seqs'}};
+        }
+        foreach my $seqid (@seq_ids) {
             ## create an array with the sequence in pieces of 10. If strict phylip, shift 5 pieces when printing the first time
             ## if printing the other times, shift 6 pieces
             ##    my @seq_array = unpack("(A10)*", $HoH{$file}{'seqs'}{$seqid});
@@ -417,7 +439,7 @@ sub phylip_blocks {
 
 
 #===  POD DOCUMENTATION  =======================================================
-#      VERSION:  10/12/2015 10:09:27 AM
+#      VERSION:  Wed 26 Sep 2018 05:53:29 PM CEST
 #  DESCRIPTION:  Documentation
 #         TODO:  ?
 #===============================================================================
@@ -451,6 +473,12 @@ Prints the manual page and exits.
 
 Concatenate files even when number of taxa differ among alignments.
 Missing data will be filled with all gap (-) sequences.
+
+
+=item B<-i, --intersect>
+
+Concatenate sequences for sequence labels occuring in all input files
+(intersection).
 
 
 =item B<-f, --fasta>
@@ -494,6 +522,8 @@ are aligned (of same length). If there are sequence labels that are not
 present in all files, a warning will be issued. Sequenced can, however,
 still be concatenated (and missing sequences be filled with missing data
 (gaps)) if the argument B<--concatenate> is used.
+In addition, only sequences with sequence labels present in all files
+(the intersection) can be printed using the B<--intersect> argument.
 
 Prints to B<STDOUT>.
 
@@ -512,16 +542,21 @@ To concatenate fasta files to fasta format:
     catfasta2phyml.pl -f file1.fas file2.fas > out.fasta
     catfasta2phyml.pl -f *.fas > out.fasta
 
-To check fasta alignments
+To check fasta alignments:
 
     catfasta2phyml.pl --noprint --verbose *.fas
     catfasta2phyml.pl -nv *.fas
     catfasta2phyml.pl -n *.fas
 
 
-To concatenate fasta files, while filling in missing taxa
+To concatenate fasta files, while filling in missing taxa:
 
     catfasta2phyml.pl --concatenate --verbose *.fas
+
+
+To concatenate sequences for sequence labels occuring in all files:
+
+    catfasta2phyml.pl --intersect *.fas
 
 
 =head1 AUTHOR
@@ -536,7 +571,8 @@ Uses Perl modules Getopt::Long and Pod::Usage
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright (c) 2010, 2011, 2012, 2013, 2014, 2015, 2016 Johan Nylander. All rights reserved.
+Copyright (c) 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018 Johan Nylander.
+All rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
