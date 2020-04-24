@@ -81,29 +81,45 @@ information about partitions is printed to **STDERR**. Example:
 
 To concatenate fasta files to a phyml readable format:
 
-    catfasta2phyml.pl file1.fas file2.fas > out.phy
-    catfasta2phyml.pl *.fas > out.phy 2> partitions.txt
-    catfasta2phyml.pl --sequential *.fas > out.phy
-    catfasta2phyml.pl --verbose *.fas > out.phy
+    $ catfasta2phyml.pl file1.fas file2.fas > out.phy
+    $ catfasta2phyml.pl *.fas > out.phy 2> partitions.txt
+    $ catfasta2phyml.pl --sequential *.fas > out.phy
+    $ catfasta2phyml.pl --verbose *.fas > out.phy
 
 To concatenate fasta files to fasta format:
 
-    catfasta2phyml.pl -f file1.fas file2.fas > out.fasta
-    catfasta2phyml.pl -f *.fas > out.fasta
+    $ catfasta2phyml.pl -f file1.fas file2.fas > out.fasta
+    $ catfasta2phyml.pl -f *.fas > out.fasta
 
 To check fasta alignments:
 
-    catfasta2phyml.pl --noprint --verbose *.fas
-    catfasta2phyml.pl -nv *.fas
-    catfasta2phyml.pl -n *.fas
+    $ catfasta2phyml.pl --noprint --verbose *.fas
+    $ catfasta2phyml.pl -nv *.fas
+    $ catfasta2phyml.pl -n *.fas
 
 To concatenate fasta files, while filling in missing taxa:
 
-    catfasta2phyml.pl --concatenate --verbose *.fas
+    $ catfasta2phyml.pl --concatenate --verbose *.fas
 
 To concatenate sequences for sequence labels occuring in all files:
 
-    catfasta2phyml.pl --intersect *.fas
+    $ catfasta2phyml.pl --intersect *.fas
+
+If we run into the issue of "Argument list too long" (where we have a command
+line longer than allowed on our system (`getconf ARG_MAX`) - which may happen
+if we try to concatenate many files), we can still do it, but in steps. For
+example (here with some help of [GNU
+parallel](https://www.gnu.org/software/parallel/))
+
+    $ catfasta2phyml.pl -c $(find . -type f -name '*.ali') > concatenated.phy 2>/dev/null
+    bash: catfasta2phyml.pl: Argument list too long
+
+    # First concatenate all files to 1000 intermediate files using GNU parallel
+    $ find . -type f -name '*.ali' | \
+          parallel -N1000 'catfasta2phyml.pl --concatenate --fasta '"{}"' > tmp.'"{#}"'.conc'
+    # Then concatenate the intermediate files to one
+    $ catfasta2phyml.pl --concatenate *.conc > concatenated.phy 2>/dev/null
+    $ rm tmp.*.conc
 
 ### AUTHOR
 
