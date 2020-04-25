@@ -105,6 +105,10 @@ To concatenate sequences for sequence labels occuring in all files:
 
     $ catfasta2phyml.pl --intersect *.fas
 
+### TIPS
+
+**1. Too many arguments error?**
+
 If we run into the issue of "Argument list too long" (where we have a command
 line longer than allowed on our system (`getconf ARG_MAX`) - which may happen
 if we try to concatenate many files), we can still do it, but in steps. For
@@ -114,12 +118,25 @@ parallel](https://www.gnu.org/software/parallel/))
     $ catfasta2phyml.pl -c $(find . -type f -name '*.ali') > concatenated.phy 2>/dev/null
     bash: catfasta2phyml.pl: Argument list too long
 
-    # First concatenate all files to 1000 intermediate files using GNU parallel
+First concatenate all files to 1000 intermediate files using GNU parallel
+
     $ find . -type f -name '*.ali' | \
-          parallel -N1000 'catfasta2phyml.pl --concatenate --fasta '"{}"' > tmp.'"{#}"'.conc'
-    # Then concatenate the intermediate files to one
-    $ catfasta2phyml.pl --concatenate *.conc > concatenated.phy 2>/dev/null
+          parallel -N1000 'catfasta2phyml.pl -c -f '"{}"' > tmp.'"{#}"'.conc'
+
+Then concatenate the intermediate files to one
+
+    $ catfasta2phyml.pl -c tmp.*.conc > concatenated.phy 2>/dev/null
     $ rm tmp.*.conc
+
+
+**2. But I want to split, not concatenate!**
+
+Facing the "opposite" situation (having a large concatenated fasta file that
+you want to split into individual alignments)? If you have a corresponding
+partitions file, you may give EAR a try
+([https://github.com/nylander/EAR](https://github.com/nylander/EAR))!
+
+
 
 ### AUTHOR
 
@@ -153,4 +170,4 @@ SOFTWARE.
 
 ### DOWNLOAD
 
-https://github.com/nylander/catfasta2phyml
+<https://github.com/nylander/catfasta2phyml>
