@@ -107,7 +107,7 @@ To concatenate sequences for sequence labels occuring in all files:
 
 ### TIPS
 
-**1. Too many arguments error?**
+**1. "Argument list too long" error?**
 
 If we run into the issue of "Argument list too long" (where we have a command
 line longer than allowed on our system (`getconf ARG_MAX`) - which may happen
@@ -116,7 +116,7 @@ example (here with some help of [GNU
 parallel](https://www.gnu.org/software/parallel/))
 
     $ catfasta2phyml.pl -c $(find . -type f -name '*.ali') > concatenated.phy 2>/dev/null
-    bash: catfasta2phyml.pl: Argument list too long
+    -bash: catfasta2phyml.pl: Argument list too long
 
 First concatenate all files to 1000 intermediate files using GNU parallel
 

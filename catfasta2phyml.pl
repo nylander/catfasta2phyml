@@ -11,7 +11,6 @@
 
 use strict;
 use warnings;
-use Data::Dumper;
 use Pod::Usage;
 use Getopt::Long;
 Getopt::Long::Configure("bundling_override");
@@ -542,8 +541,6 @@ information about partitions is printed to B<STDERR>. Example:
     file3.fas = 1020-2061
     file4.fas = 2062-3364
     file5.fas = 3365-3796
-
-
 
 
 =head1 USAGE
