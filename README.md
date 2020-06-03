@@ -113,12 +113,12 @@ If we run into the issue of "Argument list too long" (where we have a command
 line longer than allowed on our system (`getconf ARG_MAX`) - which may happen
 if we try to concatenate many files), we can still do it, but in steps. For
 example (here with some help of [GNU
-parallel](https://www.gnu.org/software/parallel/))
+parallel](https://www.gnu.org/software/parallel/)):
 
     $ catfasta2phyml.pl -c $(find . -type f -name '*.ali') > concatenated.phy 2>/dev/null
     -bash: catfasta2phyml.pl: Argument list too long
 
-First concatenate all files to 1000 intermediate files using GNU parallel
+Instead, start by concatenating to intermediate files using GNU parallel
 
     $ find . -type f -name '*.ali' | \
           parallel -N1000 'catfasta2phyml.pl -c -f '"{}"' > tmp.'"{#}"'.conc'
