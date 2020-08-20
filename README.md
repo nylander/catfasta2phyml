@@ -2,11 +2,11 @@
 
 ### NAME
 
-catfasta2phyml.pl -- Concatenate FASTA alignments to PHYML, PHYLIP, or FASTA format
+`catfasta2phyml.pl` -- Concatenate FASTA alignments to PHYML, PHYLIP, or FASTA format
 
 ### SYNOPSIS
 
-catfasta2phyml.pl \[options\] \[files\]
+    catfasta2phyml.pl [options] [files]
 
 ### OPTIONS
 
@@ -133,8 +133,8 @@ Then concatenate the intermediate files to one
 
 Facing the "opposite" situation (having a large concatenated fasta file that
 you want to split into individual alignments)? If you have a corresponding
-partitions file, you may give EAR a try
-([https://github.com/nylander/EAR](https://github.com/nylander/EAR))!
+partitions file, you may give FastEAR a try
+([https://github.com/nylander/FastEAR](https://github.com/nylander/FastEAR))!
 
 
 
