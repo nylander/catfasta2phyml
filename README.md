@@ -77,6 +77,9 @@ information about partitions is printed to **STDERR**. Example:
     file4.fas = 2062-3364
     file5.fas = 3365-3796
 
+See below for how this table can be used in other software (e.g., IQ-Tree,
+RAxML-ng).
+
 ### USAGE
 
 To concatenate fasta files to a phyml readable format:
@@ -129,7 +132,39 @@ Then concatenate the intermediate files to one
     $ rm tmp.*.conc
 
 
-**2. But I want to split, not concatenate!**
+**2. Prepare a partitions file for [IQ-Tree](http://www.iqtree.org/) or [RAxML-ng](https://github.com/amkozlov/raxml-ng/wiki)**
+
+Catfasta2phyml does not check what data type (nucleotides, amino acids, etc)
+that is being concatenated. It only checks the sequence labels and sequence
+lengths. When running catfasta2phyml, a list of partition names and relative
+positions are written to standard error.  A partition file (for, e.g., IQ-Tree
+and RAxML-ng) does require, however, a specification of the data type to be
+given in front of the partition specification. Assuming that we are
+concatenating the same kind of data type, the preparation of a partitions file
+is straightforward.  Below is an example using `sed` (GNU Linux). Let us also
+assume that we gave the full path to the input files (which prints the path in
+the output partition table):
+
+    $ catfasta2phyml.pl -c dat/*.fas > out.phy 2> partitions.txt
+    $ cat partitions.txt
+    dat/file1.fas = 1-625
+    dat/file2.fas = 626-1019
+    dat/file3.fas = 1020-2061
+    dat/file4.fas = 2062-3364
+    dat/file5.fas = 3365-3796
+
+We can now remove the `dat/` and the `.fas`, and add `DNA, ` on each line:
+
+    $ sed -i -e 's#dat/##' -e 's/\.fas//' -e 's/^/DNA, /' partitions.txt
+    $ cat partitions.txt
+    DNA, file1 = 1-625
+    DNA, file2 = 626-1019
+    DNA, file3 = 1020-2061
+    DNA, file4 = 2062-3364
+    DNA, file5 = 3365-3796
+
+
+**3. But I want to split, not concatenate!**
 
 Facing the "opposite" situation (having a large concatenated fasta file that
 you want to split into individual alignments)? If you have a corresponding
@@ -148,7 +183,7 @@ Uses Perl modules Getopt::Long and Pod::Usage
 
 ### LICENSE AND COPYRIGHT
 
-Copyright (c) 2010-2020 Johan Nylander
+Copyright (c) 2010-2022 Johan Nylander
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
