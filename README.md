@@ -143,7 +143,7 @@ given in front of the partition specification. Assuming that we are
 concatenating the same kind of data type, the preparation of a partitions file
 is straightforward.  Below is an example using `sed` (GNU Linux). Let us also
 assume that we gave the full path to the input files (which prints the path in
-the output partition table):
+the output partition table), and that the data type is "DNA":
 
     $ catfasta2phyml.pl -c dat/*.fas > out.phy 2> partitions.txt
     $ cat partitions.txt
