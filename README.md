@@ -132,18 +132,19 @@ Then concatenate the intermediate files to one
     $ rm tmp.*.conc
 
 
-**2. Prepare a partitions file for [IQ-Tree](http://www.iqtree.org/) or [RAxML-ng](https://github.com/amkozlov/raxml-ng/wiki)**
+**2. Prepare a RAxML-style partitions file**
 
-Catfasta2phyml does not check what data type (nucleotides, amino acids, etc)
-that is being concatenated. It only checks the sequence labels and sequence
-lengths. When running catfasta2phyml, a list of partition names and relative
-positions are written to standard error.  A partition file (for, e.g., IQ-Tree
-and RAxML-ng) does require, however, a specification of the data type to be
-given in front of the partition specification. Assuming that we are
-concatenating the same kind of data type, the preparation of a partitions file
-is straightforward.  Below is an example using `sed` (GNU Linux). Let us also
-assume that we gave the full path to the input files (which prints the path in
-the output partition table), and that the data type is "DNA":
+Catfasta2phyml does not check what data type (DNA, PROTEIN, etc) that is being
+concatenated. It only checks the sequence labels and sequence lengths. When
+running catfasta2phyml, a list of partition names and relative positions are
+written to standard error.  A partition file (for, e.g.,
+[IQ-Tree](http://www.iqtree.org/) and
+[RAxML-ng]((https://github.com/amkozlov/raxml-ng)) does require, however, a
+data type to be given in front of the partition specification. Assuming that we
+are concatenating the same kind of data type, the preparation of a partitions
+file is straightforward.  Below is an example using `sed` (GNU Linux). Let us
+also assume that we gave the full path to the input files (which prints the
+path in the output partition table), and that the data type is "DNA":
 
     $ catfasta2phyml.pl -c dat/*.fas > out.phy 2> partitions.txt
     $ cat partitions.txt
