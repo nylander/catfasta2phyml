@@ -56,6 +56,10 @@
     sequence lables and lengths. Program returns 1 on exit.
     See also the combination with **-v**.
 
+- **-V, --version**
+
+    Print version number and exit.
+
 ### DESCRIPTION
 
 **catfasta2phyml.pl** will concatenate FASTA alignments to one file
