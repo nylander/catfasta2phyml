@@ -211,3 +211,10 @@ SOFTWARE.
 ### DOWNLOAD
 
 <https://github.com/nylander/catfasta2phyml>
+
+
+### INSTALL WITH CONDA
+
+    $ conda install -c bioconda catfasta2phyml
+
+
