@@ -1,12 +1,5 @@
 #!/usr/bin/env perl
 
-## Mon 21 nov 2022 13:07:37
-## TODO:
-## - Print strict interleaved PHYLIP output:
-##   ./catfasta2phyml.pl -v -c -p testing2/* > outfile
-## - Avoid tmp print hash.
-
-
 use strict;
 use warnings;
 use Pod::Usage;
@@ -40,12 +33,12 @@ my $man              = 0;    # Manual
 my $help             = 0;    # Help
 my $verbose          = 0;    # Verbose
 my $noprint          = 0;    # Do not print the concatenation
-my $sequential       = 0;    # Print sequential with line breaks in in sequence (default is interleaved) 
-my $strict_phylip    = 0;    # Print strict phylip format (http://evolution.genetics.washington.edu/phylip/doc/sequence.html)
+my $sequential       = 0;    # Print sequential with line breaks in in sequence (default is interleaved)
+my $strict_phylip    = 0;    # Print strict phylip format
 my $lwidth           = 60;   # Default line width for fasta
 my $nt_counter       = 1;    # Counter for partitions
 my $end_count        = 0;    # Counter for partitions
-my $basename         = 0;  # Basename
+my $basename         = 0;    # Basename
 
 
 #---------------------------------------------------------------------------
@@ -56,17 +49,17 @@ if (@ARGV < 1) {
 }
 else {
     GetOptions(
-        'h|help|?'         => sub { pod2usage(1) },
-        'm|man'            => sub { pod2usage(-exitstatus => 0, -verbose => 2) },
-        'b|basename=s'     => \$basename,
-        'c|concatenate'    => \$concatenate,
-        'f|fasta'          => \$fasta,
-        'i|intersect'      => \$intersect,
-        'n|noprint'        => \$noprint,
-        'p|phylip'         => \$strict_phylip,
-        's|sequential'     => \$sequential,
-        'v|verbose'        => \$verbose,
-        'V|version'        => sub { print STDOUT "$0 v.$VERSION\n"; exit(0) },
+        'h|help|?'      => sub { pod2usage(1) },
+        'm|man'         => sub { pod2usage(-exitstatus => 0, -verbose => 2) },
+        'b|basename=s'  => \$basename,
+        'c|concatenate' => \$concatenate,
+        'f|fasta'       => \$fasta,
+        'i|intersect'   => \$intersect,
+        'n|noprint'     => \$noprint,
+        'p|phylip'      => \$strict_phylip,
+        's|sequential'  => \$sequential,
+        'v|verbose'     => \$verbose,
+        'V|version'     => sub { print STDOUT "$0 v.$VERSION\n"; exit(0) },
     );
 }
 
@@ -103,7 +96,7 @@ foreach my $infile (@ARGV) {
     $HoH{$infile}{'nseqs'} = scalar(keys %{${HoH}{$infile}{'seqs'}});
     $nseq_hash{$infile} = $HoH{$infile}{'nseqs'};
 
-    ## Get length of sequence for all tax labels.
+    ## Get length of sequence for all tax labels
     foreach my $tax_key (keys %$seq_hash_ref) {
         $seqid_count_hash{$tax_key}++;
     }
@@ -196,7 +189,7 @@ if ($noprint) {
     print STDERR "\n\nEnd of script.\n\n" if ($verbose);
     exit(0);
 }
-elsif($verbose) {
+elsif ($verbose) {
     print STDERR "Printing concatenation to STDOUT, and partition information to STDERR.\n\n";
     print STDERR "Concatenating sequences for $nseq sequence labels, total length $nchar.\n\n";
 }
