@@ -2,7 +2,8 @@
 
 ### NAME
 
-`catfasta2phyml.pl` -- Concatenate FASTA alignments to PHYML, PHYLIP, or FASTA format
+`catfasta2phyml.pl` -- Concatenate FASTA alignments to PHYML, PHYLIP, or FASTA
+format
 
 ### SYNOPSIS
 
@@ -12,49 +13,57 @@
 
 - **-h, -?, --help**
 
-    Print a brief help message and exits.
+Print a brief help message and exits.
 
 - **-m, --man**
 
-    Prints the manual page and exits.
+Prints the manual page and exits.
 
 - **-c, --concatenate**
 
-    Concatenate files even when number of taxa differ among alignments.
-    Missing data will be filled with all gap (-) sequences.
+Concatenate files even when number of taxa differ among alignments. Missing
+data will be filled with all gap (-) sequences.
 
 - **-i, --intersect**
 
-    Concatenate sequences for sequence labels occuring in all input files
-    (intersection).
+Concatenate sequences for sequence labels occuring in all input files
+(intersection).
 
 - **-f, --fasta**
 
-    Print output in FASTA format (default is PHYML format).
+Print output in FASTA format (default is PHYML format).
 
 - **-p, --phylip**
 
-    Print output in a strict PHYLIP format.
-    See [http://evolution.genetics.washington.edu/phylip/doc/sequence.html](http://evolution.genetics.washington.edu/phylip/doc/sequence.html).
+Print output in a strict PHYLIP format. See section "Data file format" on 
+[https://phylipweb.github.io/phylip/doc/main.html#inputfiles](https://phylipweb.github.io/phylip/doc/main.html#inputfiles)
 
-    **Note:** The current output is not entirely strict for the
-    interleaved format. Left to do is to efficiently print sequences
-    in blocks of 10 characters. The sequential PHYLIP format works,
-    on the other hand (use **-s** in combination with **-p**).
+**Note:** The current output is not entirely strict for the interleaved format.
+Left to do is to efficiently print sequences in blocks of 10 characters. The
+sequential PHYLIP format works, on the other hand (use **-s** in combination
+with **-p**).
 
 - **-s, --sequential**
 
-    Print output in sequential format (default is interleaved).
+Print output in sequential format (default is interleaved).
+
+- **-b, --basename=suffix**
+
+Ensure the basename is used as partition definition. If the provided **suffix**
+(required) matches the file suffix, it will be removed from the output string.
+
+**Note:** If the suffix it to be kept, one may use this format: **--basename='
+'** (basically providing a string that will not match the file suffix).
 
 - **-v, --verbose**
 
-    Be verbose by showing some useful output. See the combination with **-n**.
+Be verbose by showing some useful output. See the combination with **-n**.
 
 - **-n, --noprint**
 
-    Do not print the concatenation, just check if all files have the same
-    sequence lables and lengths. Program returns 1 on exit.
-    See also the combination with **-v**.
+Do not print the concatenation, just check if all files have the same sequence
+lables and lengths. Program returns 1 on exit. See also the combination with
+**-v**.
 
 - **-V, --version**
 
@@ -111,6 +120,10 @@ To concatenate fasta files, while filling in missing taxa:
 To concatenate sequences for sequence labels occuring in all files:
 
     $ catfasta2phyml.pl --intersect *.fas
+
+To ensure basename as name and suffix removal in partition definition:
+
+    $ catfasta2phyml.pl -b.fas dat/file1.fas dat/file2.fas > out.phy
 
 ### TIPS
 
@@ -188,7 +201,7 @@ Uses Perl modules Getopt::Long and Pod::Usage
 
 ### LICENSE AND COPYRIGHT
 
-Copyright (c) 2010-2022 Johan Nylander
+Copyright (c) 2010-2024 Johan Nylander
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

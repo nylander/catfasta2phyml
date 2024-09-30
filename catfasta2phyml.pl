@@ -11,13 +11,14 @@ use strict;
 use warnings;
 use Pod::Usage;
 use Getopt::Long;
+use File::Basename;
 Getopt::Long::Configure("bundling_override", "no_ignore_case");
 
 
 #---------------------------------------------------------------------------
 #  Global variables
 #---------------------------------------------------------------------------
-my $VERSION          = '1.2.0';
+my $VERSION          = '1.2.1';
 my %HoH              = ();
 my %seqids           = ();   #
 my %nseq_hash        = ();   # key:infile, val:nseq
@@ -44,6 +45,7 @@ my $strict_phylip    = 0;    # Print strict phylip format (http://evolution.gene
 my $lwidth           = 60;   # Default line width for fasta
 my $nt_counter       = 1;    # Counter for partitions
 my $end_count        = 0;    # Counter for partitions
+my $basename         = 0;  # Basename
 
 
 #---------------------------------------------------------------------------
@@ -56,6 +58,7 @@ else {
     GetOptions(
         'h|help|?'         => sub { pod2usage(1) },
         'm|man'            => sub { pod2usage(-exitstatus => 0, -verbose => 2) },
+        'b|basename=s'     => \$basename,
         'c|concatenate'    => \$concatenate,
         'f|fasta'          => \$fasta,
         'i|intersect'      => \$intersect,
@@ -216,7 +219,13 @@ if ($fasta or $sequential) {
     foreach my $file (@infiles) {
         die "\n\nError: $file not in HoH\n" unless exists(${HoH}{$file});
         $end_count = $nt_counter + ${HoH}{$file}{'nchars'} - 1;
-        print STDERR "$file = $nt_counter-$end_count\n";
+        if ($basename) {
+            my $f = basename($file, $basename);
+            print STDERR "$f = $nt_counter-$end_count\n";
+        }
+        else {
+            print STDERR "$file = $nt_counter-$end_count\n";
+        }
         $nt_counter = $nt_counter + ${HoH}{$file}{'nchars'};
         my @seq_ids = ();
         if ($intersect) {
@@ -253,7 +262,13 @@ else { # default: phyml interleaved, file by file
     foreach my $file (@infiles) {
         die "\n\nError: $file not in HoH\n" unless exists(${HoH}{$file});
         $end_count = $nt_counter + ${HoH}{$file}{'nchars'} - 1;
-        print STDERR "$file = $nt_counter-$end_count\n";
+        if ($basename) {
+            my $f = basename($file, $basename);
+            print STDERR "$f = $nt_counter-$end_count\n";
+        }
+        else {
+            print STDERR "$file = $nt_counter-$end_count\n";
+        }
         $nt_counter = $nt_counter + ${HoH}{$file}{'nchars'};
         my @seq_ids = ();
         if ($intersect) {
@@ -441,7 +456,7 @@ sub phylip_blocks {
 
 
 #===  POD DOCUMENTATION  =======================================================
-#      VERSION:  Mon 21 nov 2022 12:56:41
+#      VERSION:  Mon 30 Sep 2024 13:38:57
 #  DESCRIPTION:  Documentation
 #         TODO:  ?
 #===============================================================================
@@ -502,6 +517,15 @@ on the other hand (use B<-s> in combination with B<-p>).
 =item B<-s, --sequential>
 
 Print output in sequential format (default is interleaved).
+
+
+=item B<-b, --basename=suffix>
+
+Ensure the basename is used as partition definition. If the provided C<suffix>
+(required) matches the file suffix, it will be removed from the output string.
+
+B<Note:> If the suffix it to be kept, one may use this format: C<--basename=' '> 
+(basically providing a string that will not match the file suffix).
 
 
 =item B<-v, --verbose>
@@ -571,6 +595,10 @@ To concatenate sequences for sequence labels occuring in all files:
 
     catfasta2phyml.pl --intersect *.fas
 
+To ensure basename as name and suffix removal in partition definition:
+
+    catfasta2phyml.pl -b.fas dat/file1.fas dat/file2.fas > out.phy
+
 
 =head1 AUTHOR
 
@@ -579,12 +607,12 @@ Written by Johan A. A. Nylander
 
 =head1 DEPENDENCIES
 
-Uses Perl modules Getopt::Long and Pod::Usage
+Uses Perl modules Getopt::Long, Pod::Usage, File::Basename;
 
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright (c) 2010-2022 Johan Nylander
+Copyright (c) 2010-2024 Johan Nylander
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
