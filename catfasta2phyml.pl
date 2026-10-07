@@ -415,11 +415,19 @@ sub scan_fasta {
         if ($line =~ /^>(.*)\z/) {
             my $new_label = $1;
 
-            die "Error: Empty FASTA header in '$path'\n"
-                unless $new_label =~ /\S/;
+            #die "Error: Empty FASTA header in '$path'\n"
+            #    unless $new_label =~ /\S/;
+            if ($new_label !~ /\S/) {
+                print STDERR "Error: Empty FASTA header in $path \n" if ($verbose);
+                exit 1;
+            }
 
-            die "Error: Duplicate FASTA header '$new_label' in '$path'\n"
-                if exists $records{$new_label};
+            #die "Error: Duplicate FASTA header '$new_label' in '$path'\n"
+            #    if exists $records{$new_label};
+            if (exists $records{$new_label}) {
+                print STDERR "Error: Duplicate FASTA header '$new_label' in '$path'\n" if ($verbose);
+                exit 1;
+            }
 
             # Close the preceding record before starting the next.
             $records{$label}{end} = $line_start
@@ -436,9 +444,11 @@ sub scan_fasta {
             $records{$label}{length} += length($line);
         }
         elsif ($line =~ /\S/) {
-            die
-                "Error: Sequence data before the first FASTA header ",
-                "in '$path'\n";
+            #die
+            #    "Error: Sequence data before the first FASTA header ",
+            #    "in '$path'\n";
+            print STDERR "Error: Sequence data before the first FASTA header in '$path'\n" if ($verbose);
+            exit 1;
         }
     }
 
@@ -457,14 +467,21 @@ sub scan_fasta {
     for my $name (@labels) {
         my $length = $records{$name}{length};
 
-        die "Error: No sequence for header '$name' in '$path'\n"
-            unless $length;
+        #die "Error: No sequence for header '$name' in '$path'\n"
+        #    unless $length;
+        if (! $length) {
+            print STDERR "Error: No sequence for header '$name' in '$path'\n" if ($verbose);
+        }
 
         if ($length != $nchar) {
-            die
-                "Error: Expecting aligned input sequences.\n",
-                "Sequences in '$path' are not all of the same length:\n",
-                "$reference_label is $nchar, $name is $length\n";
+            #die
+            #    "Error: Expecting aligned input sequences.\n",
+            #    "Sequences in '$path' are not all of the same length:\n",
+            #    "$reference_label is $nchar, $name is $length\n";
+           print STDERR "Error: Expecting aligned input sequences.\n" if ($verbose);
+           print STDERR "Sequences in '$path' are not all of the same length:\n" if ($verbose);
+           print STDERR "$reference_label is $nchar, $name is $length\n" if ($verbose);
+           exit 1;
         }
     }
 
