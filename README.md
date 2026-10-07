@@ -209,7 +209,7 @@ Uses Perl modules Getopt::Long and Pod::Usage
 
 ### LICENSE AND COPYRIGHT
 
-Copyright (c) 2010-2024 Johan Nylander, [MIT license](LICENSE)
+Copyright (c) 2010-2026 Johan Nylander, [MIT license](LICENSE)
 
 ### DOWNLOAD
 
