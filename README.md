@@ -36,12 +36,7 @@ Print output in FASTA format (default is PHYML format).
 
 - **-p, --phylip**
 
-Print output in a strict PHYLIP format.
-
-Note: The current output is not entirely strict for the interleaved format.
-Left to do is to efficiently print sequences in blocks of 10 characters. The
-sequential PHYLIP format works, on the other hand (use **-s** in combination
-with **-p**). See section "Data file format" on
+Print output in a strict PHYLIP format. See section "Data file format" on
 [https://phylipweb.github.io/phylip/doc/main.html#inputfiles](https://phylipweb.github.io/phylip/doc/main.html#inputfiles)
 
 - **-s, --sequential**
@@ -133,7 +128,6 @@ To ensure basename as name and suffix removal in partition definition:
     $ catfasta2phyml.pl -b dat/file1.fas dat/file2.fas > out.phy
     $ catfasta2phyml.pl -b'.fas' dat/file1.fas dat/file2.fas > out.phy
 
-
 ### TIPS
 
 **1. "Argument list too long" error?**
@@ -156,7 +150,6 @@ Then concatenate the intermediate files to one
 
     $ catfasta2phyml.pl -c tmp.*.conc > concatenated.phy 2>/dev/null
     $ rm tmp.*.conc
-
 
 **2. Prepare a RAxML-style partitions file**
 
@@ -190,7 +183,6 @@ We can now add `DNA, ` on each line:
     DNA, file4 = 2062-3364
     DNA, file5 = 3365-3796
 
-
 **3. But I want to split, not concatenate!**
 
 Facing the "opposite" situation (having a large concatenated fasta file that
@@ -198,6 +190,12 @@ you want to split into individual alignments)? If you have a corresponding
 partitions file, you may give FastEAR a try
 ([https://github.com/nylander/FastEAR](https://github.com/nylander/FastEAR))!
 
+### Memory/IO
+
+This version (2.0 and above) does not read sequence data in to RAM. This will
+allow for a lower memory footprint. On the other hand, it is heavy on the IO
+(read/write) part, and hence slower compared to the older version.  This is a
+trade off, and increasing the the speed is a future area of improvment.
 
 ### AUTHOR
 
