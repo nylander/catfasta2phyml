@@ -27,7 +27,8 @@ data will be filled with all gap (-) sequences.
 - **-i, --intersect**
 
 Concatenate sequences for sequence labels occuring in all input files
-(intersection).
+(intersection). This option takes precedence over --concatenate if both are
+supplied.
 
 - **-f, --fasta**
 
@@ -35,25 +36,22 @@ Print output in FASTA format (default is PHYML format).
 
 - **-p, --phylip**
 
-Print output in a strict PHYLIP format. See section "Data file format" on 
-[https://phylipweb.github.io/phylip/doc/main.html#inputfiles](https://phylipweb.github.io/phylip/doc/main.html#inputfiles)
+Print output in a strict PHYLIP format.
 
-**Note:** The current output is not entirely strict for the interleaved format.
+Note: The current output is not entirely strict for the interleaved format.
 Left to do is to efficiently print sequences in blocks of 10 characters. The
 sequential PHYLIP format works, on the other hand (use **-s** in combination
-with **-p**).
+with **-p**). See section "Data file format" on
+[https://phylipweb.github.io/phylip/doc/main.html#inputfiles](https://phylipweb.github.io/phylip/doc/main.html#inputfiles)
 
 - **-s, --sequential**
 
-Print output in sequential format (default is interleaved).
+Print output in sequential format. The default is interleaved output.
 
 - **-b, --basename=suffix**
 
-Ensure the basename is used as partition definition. If the provided **suffix**
-(required) matches the file suffix, it will be removed from the output string.
-
-**Note:** If the suffix it to be kept, one may use this format: **--basename='
-'** (basically providing a string that will not match the file suffix).
+Use file basenames in partition definitions. Remove the supplied suffix
+(optional) when it matches the end of the basename.
 
 - **-v, --verbose**
 
@@ -61,9 +59,12 @@ Be verbose by showing some useful output. See the combination with **-n**.
 
 - **-n, --noprint**
 
-Do not print the concatenation, just check if all files have the same sequence
-lables and lengths. Program returns 1 on exit. See also the combination with
-**-v**.
+Validate input alignments and the requested label selection without printing
+alignment data or partition definitions.
+
+Return status 0 on success, or a nonzero status on failure.
+
+See also the combination with **-v**.
 
 - **-V, --version**
 
@@ -111,7 +112,13 @@ To check fasta alignments:
 
     $ catfasta2phyml.pl --noprint --verbose *.fas
     $ catfasta2phyml.pl -nv *.fas
-    $ catfasta2phyml.pl -n *.fas
+    $ for f in dat/*.fas ; do
+        if ./catfasta2phyml.pl -n "$f" 2> /dev/null ; then
+          echo "$f OK"
+        else
+          echo "$f FAIL"
+        fi
+      done
 
 To concatenate fasta files, while filling in missing taxa:
 
@@ -123,7 +130,9 @@ To concatenate sequences for sequence labels occuring in all files:
 
 To ensure basename as name and suffix removal in partition definition:
 
-    $ catfasta2phyml.pl -b.fas dat/file1.fas dat/file2.fas > out.phy
+    $ catfasta2phyml.pl -b dat/file1.fas dat/file2.fas > out.phy
+    $ catfasta2phyml.pl -b'.fas' dat/file1.fas dat/file2.fas > out.phy
+
 
 ### TIPS
 
@@ -157,23 +166,23 @@ running catfasta2phyml, a list of partition names and relative positions are
 written to standard error.  A partition file (for, e.g.,
 [IQ-Tree](http://www.iqtree.org/) and
 [RAxML-ng]((https://github.com/amkozlov/raxml-ng)) does require, however, a
-data type to be given in front of the partition specification. Assuming that we
-are concatenating the same kind of data type, the preparation of a partitions
-file is straightforward.  Below is an example using `sed` (GNU Linux). Let us
-also assume that we gave the full path to the input files (which prints the
-path in the output partition table), and that the data type is "DNA":
+data type to be given in front of the partition specification.
 
-    $ catfasta2phyml.pl -c dat/*.fas > out.phy 2> partitions.txt
+Assuming that we are concatenating the same kind of data type, the preparation
+of a partitions file is straightforward.  Below is an example using `sed` (GNU
+Linux). Let us assume that that the data type is "DNA":
+
+    $ ./catfasta2phyml.pl -b'.fas' -c dat/*.fas > out.phy 2> partitions.txt
     $ cat partitions.txt
-    dat/file1.fas = 1-625
-    dat/file2.fas = 626-1019
-    dat/file3.fas = 1020-2061
-    dat/file4.fas = 2062-3364
-    dat/file5.fas = 3365-3796
+    file1 = 1-625
+    file2 = 626-1019
+    file3 = 1020-2061
+    file4 = 2062-3364
+    file5 = 3365-3796
 
-We can now remove the `dat/` and the `.fas`, and add `DNA, ` on each line:
+We can now add `DNA, ` on each line:
 
-    $ sed -i -e 's#dat/##' -e 's/\.fas//' -e 's/^/DNA, /' partitions.txt
+    $ sed -i -e 's/^/DNA, /' partitions.txt
     $ cat partitions.txt
     DNA, file1 = 1-625
     DNA, file2 = 626-1019
@@ -190,7 +199,6 @@ partitions file, you may give FastEAR a try
 ([https://github.com/nylander/FastEAR](https://github.com/nylander/FastEAR))!
 
 
-
 ### AUTHOR
 
 Written by Johan A. A. Nylander
@@ -201,25 +209,7 @@ Uses Perl modules Getopt::Long and Pod::Usage
 
 ### LICENSE AND COPYRIGHT
 
-Copyright (c) 2010-2024 Johan Nylander
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Copyright (c) 2010-2024 Johan Nylander, [MIT license](LICENSE)
 
 ### DOWNLOAD
 

@@ -757,9 +757,6 @@ printing alignment data or partition definitions.
 
 Return status 0 on success, or a nonzero status on failure.
 
-Without B<-c> or B<-i>, validation preserves the original equal-taxon-count
-rule; it does not require identical label sets.
-
 =item B<-V, --version>
 
 Print the version number and exit.
