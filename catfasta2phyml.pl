@@ -23,6 +23,11 @@ my $basename_suffix;
 my $line_width = 60;
 my $chunk_size = 64 * 1024;
 
+# Strict PHYLIP interleaved layout: groups of 10 sites per row.
+use constant PHYLIP_GROUP        => 10;
+use constant PHYLIP_FIRST_GROUPS => 6;   # first row
+use constant PHYLIP_NEXT_GROUPS  => 7;   # subsequent rows
+
 #---------------------------------------------------------------------------
 # Arguments
 #---------------------------------------------------------------------------
@@ -291,6 +296,9 @@ if ($fasta || $sequential) {
 
         $writer->{finish}->();
     }
+}
+elsif ($strict_phylip) {
+    print_interleaved_phylip(\@inputs, \@labels, $selection, $nchar);
 }
 else {
     # Interleaved: each input alignment is one output block.
@@ -639,6 +647,144 @@ sub make_writer {
     };
 }
 
+
+#---------------------------------------------------------------------------
+# Strict PHYLIP interleaved output.
+#
+# Rows span the concatenated alignment (not one block per input file).
+# Each label keeps a cursor (input index, sites consumed in that input,
+# byte position), so each row reads only the next few residues.
+# Only one input handle is open at a time.
+#
+# Labels missing from an input are gap-filled in 'union' mode and
+# skipped in legacy mode (as in sequential output).
+#---------------------------------------------------------------------------
+sub print_interleaved_phylip {
+    my ($inputs, $labels, $selection, $total) = @_;
+
+    my %cursor;
+    for my $label (@$labels) {
+        $cursor{$label} = { input => 0, done => 0, pos => undef };
+        position_cursor($cursor{$label}, $inputs, $label);
+    }
+
+    my $cache = { path => undef, fh => undef };
+    my $site = 0;
+    my $row  = 0;
+
+    while ($site < $total) {
+        my $groups = $row == 0 ? PHYLIP_FIRST_GROUPS : PHYLIP_NEXT_GROUPS;
+        my $width  = $groups * PHYLIP_GROUP;
+        $width = $total - $site if $total - $site < $width;
+
+        print STDOUT "\n" if $row > 0;    # optional blank separator line
+
+        for my $label (@$labels) {
+            my $seq = next_sites(
+                $label, $width, $inputs, $cursor{$label},
+                $selection, $cache,
+            );
+
+            my $line = join ' ', unpack('(A' . PHYLIP_GROUP . ')*', $seq);
+
+            print STDOUT $row == 0 ? phylip_label($label) : '', $line, "\n";
+        }
+
+        $site += $width;
+        $row++;
+    }
+
+    if ($cache->{fh}) {
+        close_input($cache->{fh}, $cache->{path});
+    }
+}
+
+
+#---------------------------------------------------------------------------
+# Point the cursor at the start of the current input's record,
+# skipping inputs that lack this label in legacy mode.
+#---------------------------------------------------------------------------
+sub position_cursor {
+    my ($cur, $inputs, $label) = @_;
+
+    $cur->{done} = 0;
+    $cur->{pos}  = undef;
+
+    return if $cur->{input} >= @$inputs;
+
+    my $rec = $inputs->[ $cur->{input} ]{records}{$label};
+    $cur->{pos} = $rec->{start} if $rec;
+}
+
+sub next_sites {
+    my ($label, $count, $inputs, $cur, $selection, $cache) = @_;
+
+    my $out = '';
+
+    while (length($out) < $count && $cur->{input} < @$inputs) {
+        my $input = $inputs->[ $cur->{input} ];
+        my $rec   = $input->{records}{$label};
+        my $avail = $input->{nchar} - $cur->{done};
+        my $take  = $count - length($out);
+        $take = $avail if $avail < $take;
+
+        if ($rec) {
+            my $path = $input->{path};
+
+            if (!defined $cache->{path} || $cache->{path} ne $path) {
+                close_input($cache->{fh}, $cache->{path}) if $cache->{fh};
+                $cache->{fh}   = open_input($path);
+                $cache->{path} = $path;
+            }
+
+            my $fh  = $cache->{fh};
+            my $got = '';
+
+            seek($fh, $cur->{pos}, 0)
+                or die "Error: Could not seek in '$path': $!\n";
+
+            # Reading at most (residues still needed) bytes can never
+            # pass the last wanted residue, so no overshoot handling.
+            while (length($got) < $take) {
+                my $want = $take - length($got);
+                my $buf  = '';
+                my $read = read($fh, $buf, $want);
+
+                die "Error: Could not read infile '$path': $!\n"
+                    unless defined $read;
+                die "Error: Unexpected end of file in '$path'; " .
+                    "input may have changed\n" if $read == 0;
+
+                $cur->{pos} += $read;
+                $buf =~ s/\s+//g;
+                $got .= $buf;
+            }
+
+            $out .= $got;
+        }
+        elsif ($selection eq 'union') {
+            $out .= '-' x $take;
+        }
+        elsif ($selection eq 'intersection') {
+            die "Error: Selected intersection label '$label' " .
+                "is missing from '$input->{path}'\n";
+        }
+        else {
+            $take = $avail;    # legacy: skip the missing segment
+        }
+
+        $cur->{done} += $take;
+
+        if ($cur->{done} >= $input->{nchar}) {
+            $cur->{input}++;
+            position_cursor($cur, $inputs, $label);
+        }
+    }
+
+    return $out;
+}
+
+
 #---------------------------------------------------------------------------
 # Partition coordinates retain input argument order.
 #---------------------------------------------------------------------------
@@ -728,12 +874,6 @@ precedence over PHYLIP formatting.
 
 Use ten-character PHYLIP labels, truncated or padded as necessary.
 Labels that collide after truncation cause an error.
-
-Sequential output uses groups of ten characters, with five groups on
-the first row and six on subsequent rows.
-
-Note: Interleaved output is not fully strict PHYLIP (see
-L<https://phylipweb.github.io/phylip/doc/sequence.html>).
 
 Use B<-s -p> for sequential PHYLIP output.
 
