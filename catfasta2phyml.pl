@@ -4,466 +4,676 @@ use strict;
 use warnings;
 use Pod::Usage;
 use Getopt::Long;
-use File::Basename;
+use File::Basename qw(basename);
+
 Getopt::Long::Configure("bundling_override", "no_ignore_case");
 
+my $VERSION = '2.0.0';
+
+# Input/output settings.
+my $fasta         = 0;
+my $concatenate   = 0;
+my $intersect     = 0;
+my $noprint       = 0;
+my $strict_phylip = 0;
+my $sequential    = 0;
+my $verbose       = 0;
+my $basename_suffix;
+
+my $line_width = 60;
+my $chunk_size = 64 * 1024;
 
 #---------------------------------------------------------------------------
-#  Global variables
+# Arguments
 #---------------------------------------------------------------------------
-my $VERSION          = '1.2.1';
-my %HoH              = ();
-my %seqids           = ();   #
-my %nseq_hash        = ();   # key:infile, val:nseq
-my %nchar_hash       = ();   # key:infile, val:nchar (for aligned data)
-my %seqid_count_hash = ();   # key:seqid, val:count
-my $term             = $/;   # Input record separator
-my @hash_ref_array   = ();   # Array with hash references
-my @all_labels_found = ();   # All unique labels in all files
-my @intersect_labels = ();   # Labels occuring in all files (intersection)
-my @infiles          = ();   # Infiles on ARGV
-my $nfiles           = 0;    # Count number of files
-my $space            = "\t"; # Spacer for aligned print
-my $nchar            = 0;    # nchar for phyml header
-my $nseq             = 0;    # nseq for phyml header
-my $fasta            = 0;    # Print phyml format by default
-my $concatenate      = 0;    # Concatenate after adding missing taxa
-my $intersect        = 0;    # Concatenate only intersecting taxa
-my $man              = 0;    # Manual
-my $help             = 0;    # Help
-my $verbose          = 0;    # Verbose
-my $noprint          = 0;    # Do not print the concatenation
-my $sequential       = 0;    # Print sequential with line breaks in in sequence (default is interleaved)
-my $strict_phylip    = 0;    # Print strict phylip format
-my $lwidth           = 60;   # Default line width for fasta
-my $nt_counter       = 1;    # Counter for partitions
-my $end_count        = 0;    # Counter for partitions
-my $basename         = 0;    # Basename
+die "No arguments. Try:\n\n $0 -man\n\n" unless @ARGV;
 
-
-#---------------------------------------------------------------------------
-#  Handle arguments
-#---------------------------------------------------------------------------
-if (@ARGV < 1) {
-    die "No arguments. Try:\n\n $0 -man\n\n";
-}
-else {
-    GetOptions(
-        'h|help|?'      => sub { pod2usage(1) },
-        'm|man'         => sub { pod2usage(-exitstatus => 0, -verbose => 2) },
-        'b|basename=s'  => \$basename,
-        'c|concatenate' => \$concatenate,
-        'f|fasta'       => \$fasta,
-        'i|intersect'   => \$intersect,
-        'n|noprint'     => \$noprint,
-        'p|phylip'      => \$strict_phylip,
-        's|sequential'  => \$sequential,
-        'v|verbose'     => \$verbose,
-        'V|version'     => sub { print STDOUT "$0 v.$VERSION\n"; exit(0) },
-    );
+# A bare basename option must not consume the next input filename.
+# Normalize it to an explicitly empty optional argument.
+# Do not modify arguments following the option terminator "--".
+for my $arg (@ARGV) {
+    last if $arg eq '--';
+    if ($arg eq '-b' || $arg eq '--basename') {
+        $arg = '--basename=';
+    }
 }
 
+GetOptions(
+    'h|help|?'      => sub { pod2usage(1) },
+    'm|man'         => sub {
+        pod2usage(-exitstatus => 0, -verbose => 2);
+    },
+    'b|basename:s'  => \$basename_suffix,
+    'c|concatenate' => \$concatenate,
+    'f|fasta'       => \$fasta,
+    'i|intersect'   => \$intersect,
+    'n|noprint'     => \$noprint,
+    'p|phylip'      => \$strict_phylip,
+    's|sequential'  => \$sequential,
+    'v|verbose'     => \$verbose,
+    'V|version'     => sub {
+        print STDOUT "$0 v.$VERSION\n";
+        exit(0);
+    },
+) or pod2usage(2);
+
+die "Error: No input files given\n" unless @ARGV;
+
+# Each entry contains metadata only:
+#
+# {
+#     path    => filename,
+#     nseq    => number of labels,
+#     nchar   => alignment length,
+#     records => {
+#         label => {
+#             start  => byte offset immediately after the header,
+#             end    => byte offset before the next header, or EOF,
+#             length => number of sequence characters,
+#         },
+#     },
+# }
+#
+# No sequence strings are stored here.
+my @inputs;
+my %label_count;
 
 #---------------------------------------------------------------------------
-#  Read all infiles, count labels and get sequence lengths
+# Pass 1: index labels, byte ranges, and sequence lengths
 #---------------------------------------------------------------------------
-print STDERR "\nChecking sequences in infiles...\n\n" if ($verbose);
-foreach my $infile (@ARGV) {
+print STDERR "\nChecking sequences in infiles...\n\n" if $verbose;
 
-    my $seq_hash_ref = parse_fasta($infile);
-    print STDERR "  File $infile: " if ($verbose);
-    push (@infiles, $infile);
-    $nfiles++;
+for my $path (@ARGV) {
+    my $input = scan_fasta($path);
+    push @inputs, $input;
 
-    ## Are sequences aligned?
-    my (@ret) = aligned($seq_hash_ref);
-    if (scalar(@ret) > 1) {
-        print STDERR "\n\nError: Expecting aligned input sequences.\n";
-        print STDERR "Sequences in $infile are not all of the same length:\n$ret[1] is $ret[0], $ret[2] is $ret[3]\n";
+    # Records are keyed by unique labels, so each label contributes
+    # exactly once per input alignment.
+    $label_count{$_}++ for keys %{ $input->{records} };
+
+    printf STDERR "  File %s: ntax=%d nchar=%d\n",
+        $path, $input->{nseq}, $input->{nchar}
+        if $verbose;
+}
+
+my $nfiles = scalar @inputs;
+my @all_labels = sort keys %label_count;
+my $space = max_label_length(\@all_labels) + 2;
+
+#---------------------------------------------------------------------------
+# Select output labels
+#---------------------------------------------------------------------------
+my @labels;
+my $nseq;
+my $selection;
+
+if ($intersect) {
+    # Do this BEFORE checking whether taxon counts are equal.
+    @labels = grep { $label_count{$_} == $nfiles } @all_labels;
+
+    unless (@labels) {
+        print STDERR "Warning: no labels occur in all files\n";
         exit(1);
     }
-    elsif (scalar(@ret) == 1) {
-        $HoH{$infile}{'aligned'} = 1;
-        $HoH{$infile}{'nchars'} = $ret[0];
-    }
 
-    ## Save sequences from file(s) in one hash. TODO: Mem limit?
-    foreach my $key (keys %$seq_hash_ref) {
-        $HoH{$infile}{'seqs'}{$key} = ${$seq_hash_ref}{$key};
-    }
-
-    ## Get nseqs for file
-    $HoH{$infile}{'nseqs'} = scalar(keys %{${HoH}{$infile}{'seqs'}});
-    $nseq_hash{$infile} = $HoH{$infile}{'nseqs'};
-
-    ## Get length of sequence for all tax labels
-    foreach my $tax_key (keys %$seq_hash_ref) {
-        $seqid_count_hash{$tax_key}++;
-    }
-
-    print STDERR " ntax=$HoH{$infile}{'nseqs'} nchar=$HoH{$infile}{'nchars'}\n" if ($verbose);
-
-} # Done with file
-
-
-#---------------------------------------------------------------------------
-# Collect taxon labels and find the length of longest name for printing
-#---------------------------------------------------------------------------
-(@all_labels_found) = sort { length($b) <=> length($a) } keys %seqid_count_hash;
-$space = length($all_labels_found[0]) + 2;
-
-
-#---------------------------------------------------------------------------
-# Get nseq. First check if nseqs are equal among input files
-#---------------------------------------------------------------------------
-my %string = map { $_, 1 } values %nseq_hash;
-if (keys %string == 1) {
-    my (@nseqs) = values %nseq_hash;
-    $nseq = shift(@nseqs);
+    $selection = 'intersection';
+    $nseq = scalar @labels;
 }
 elsif ($concatenate) {
-    foreach my $file (keys %HoH) {
-        my %second = map {$_=>1} (keys %{${HoH}{$file}{'seqs'}});
-        my @only_in_all_labels_found = grep { !$second{$_} } @all_labels_found;
-        if (@only_in_all_labels_found) {
-            print STDERR "\n  Need to fill missing sequences for file $file:\n" if ($verbose);
-            my $allgapseq = '-' x $HoH{$file}{'nchars'};
-            foreach my $seqid (@only_in_all_labels_found) {
-                print STDERR "    Adding all gaps for seqid $seqid\n" if ($verbose);
-                $HoH{$file}{'seqs'}{$seqid} = $allgapseq;
-            }
+    @labels = @all_labels;
+    $selection = 'union';
+    $nseq = scalar @labels;
+
+    if ($verbose) {
+        for my $input (@inputs) {
+            my @missing = grep {
+                !exists $input->{records}{$_}
+            } @labels;
+
+            next unless @missing;
+
+            print STDERR
+                "\n  Need to fill missing sequences for file ",
+                "$input->{path}:\n";
+
+            print STDERR "    Adding all gaps for seqid $_\n"
+                for @missing;
         }
-        $nseq = scalar(keys %{$HoH{$file}{'seqs'}});
-        $HoH{$file}{'nseqs'} = $nseq;
     }
-}
-elsif ($intersect) {
-    my ($max_nfiles_for_label) = sort { $b <=> $a } values %seqid_count_hash;
-    (@intersect_labels) = grep{ $seqid_count_hash{$_} eq $max_nfiles_for_label } keys %seqid_count_hash;
-    $nseq = scalar(@intersect_labels);
 }
 else {
-    print STDERR "\n";
-    foreach my $key (sort { $seqid_count_hash{$a} <=> $seqid_count_hash{$b} } (keys %seqid_count_hash)) {
-        printf STDERR "%-${space}s --> %d\n", $key, $seqid_count_hash{$key};
-    }
-    print STDERR "\n\nError: Some sequence labels does not occur in all files.\n";
-    print STDERR "That is, sequence labels needs to be identical for safe concatenation.\n";
-    print STDERR "Use the --concatenate (or -c) to concatenate anyway.\n";
-    print STDERR "Empty (all gap) sequences will be added where needed.\n\n";
-    print STDERR "Alternatively, you may use --intersect (or -i) to only\n";
-    print STDERR "concatenate sequences with labels present in all files.\n\n";
-    exit(1);
-}
+    # Equal numbers of taxa are sufficient, even if labels differ.
+    my %taxon_counts = map { $_->{nseq} => 1 } @inputs;
 
+    if (scalar(keys %taxon_counts) != 1) {
+        print STDERR "\n";
 
-#---------------------------------------------------------------------------
-# Check if names can be abbreviated
-#---------------------------------------------------------------------------
-if ($strict_phylip) {
-    my %test = ();
-    foreach my $label (@all_labels_found) {
-        my $phylabel = phylip_label($label);
-        if ($test{$phylabel}++) {
-            print STDERR "\nWarning! Strict Phylip format results in duplicate labels for these data (e.g., $phylabel)!\n";
-            exit(1);
+        for my $label (
+            sort {
+                $label_count{$a} <=> $label_count{$b}
+                    || $a cmp $b
+            } @all_labels
+        ) {
+            printf STDERR "%-${space}s --> %d\n",
+                $label, $label_count{$label};
         }
+
+        print STDERR
+            "\nError: Input files contain different numbers of taxa.\n",
+            "Use --concatenate (-c) to fill missing sequences with gaps,\n",
+            "or --intersect (-i) to retain labels present in all files.\n";
+
+        exit(1);
+    }
+
+    $selection = 'legacy';
+    @labels = @all_labels;
+    $nseq = $inputs[0]->{nseq};
+}
+
+# FASTA takes precedence over PHYLIP formatting.
+if ($strict_phylip && !$fasta) {
+    my %seen;
+
+    for my $label (@labels) {
+        my $short = phylip_label($label);
+
+        if (exists $seen{$short}) {
+            die
+                "Error: Strict PHYLIP labels collide: ",
+                "'$seen{$short}' and '$label' both become '$short'\n";
+        }
+
+        $seen{$short} = $label;
     }
 }
 
+my $nchar = 0;
+$nchar += $_->{nchar} for @inputs;
 
-#---------------------------------------------------------------------------
-#  Get nchar
-#---------------------------------------------------------------------------
-foreach my $file (keys %HoH) {
-    $nchar = $nchar + ($HoH{$file}{'nchars'});
-}
-
-
-#---------------------------------------------------------------------------
-#  Print everything to STDOUT
-#---------------------------------------------------------------------------
-print STDERR "\nChecked $nfiles files -- sequence labels and lengths seems OK.\n\n" if ($verbose);
+print STDERR
+    "\nChecked $nfiles files -- input alignments and selection checked.\n\n"
+    if $verbose;
 
 if ($noprint) {
-    print STDERR "\n\nEnd of script.\n\n" if ($verbose);
+    print STDERR "End of script.\n" if $verbose;
     exit(0);
 }
-elsif ($verbose) {
-    print STDERR "Printing concatenation to STDOUT, and partition information to STDERR.\n\n";
-    print STDERR "Concatenating sequences for $nseq sequence labels, total length $nchar.\n\n";
-}
 
-if ($strict_phylip) {
-    print STDOUT "   $nseq    $nchar\n";
-}
-else {
-    print STDOUT "$nseq $nchar\n" unless $fasta;
-}
+if ($verbose) {
+    print STDERR
+        "Printing concatenation to STDOUT, ",
+        "and partition information to STDERR.\n",
+        "Header dimensions: $nseq sequence labels, $nchar characters.\n\n";
 
-
-#---------------------------------------------------------------------------
-# Print the hash via intermediate hash
-# TODO: Try to circumvent the intermediate hash (mem limit?!)
-#---------------------------------------------------------------------------
-if ($fasta or $sequential) {
-    ## First, concatenate all sequences from hashes
-    my %print_hash = ();
-    foreach my $file (@infiles) {
-        die "\n\nError: $file not in HoH\n" unless exists(${HoH}{$file});
-        $end_count = $nt_counter + ${HoH}{$file}{'nchars'} - 1;
-        if ($basename) {
-            my $f = basename($file, $basename);
-            print STDERR "$f = $nt_counter-$end_count\n";
-        }
-        else {
-            print STDERR "$file = $nt_counter-$end_count\n";
-        }
-        $nt_counter = $nt_counter + ${HoH}{$file}{'nchars'};
-        my @seq_ids = ();
-        if ($intersect) {
-            @seq_ids = @intersect_labels;
-        }
-        else {
-            @seq_ids = keys %{$HoH{$file}{'seqs'}};
-        }
-        foreach my $seqid (@seq_ids) {
-            $print_hash{$seqid} .= $HoH{$file}{'seqs'}{$seqid};
-        }
+    if ($selection eq 'legacy' && @labels != $nseq) {
+        print STDERR
+            "Warning: Equal taxon counts were accepted, but labels differ.\n",
+            "Default-mode output may have inconsistent labels or lengths.\n",
+            "Use --concatenate to pad missing segments, or --intersect ",
+            "to retain shared labels.\n\n";
     }
-    ## Then print, and add line breaks in sequences
-    foreach my $label (sort keys %print_hash) {
+}
+
+#---------------------------------------------------------------------------
+# Output header and partition table
+#---------------------------------------------------------------------------
+unless ($fasta) {
+    if ($strict_phylip) {
+        print STDOUT "   $nseq    $nchar\n";
+    }
+    else {
+        print STDOUT "$nseq $nchar\n";
+    }
+}
+
+print_partitions(\@inputs, $basename_suffix);
+
+#---------------------------------------------------------------------------
+# Pass 2: retrieve and print sequence data on demand
+#---------------------------------------------------------------------------
+if ($fasta || $sequential) {
+    # One output label at a time, across all input alignments.
+    #
+    # Open only one input handle at a time. This avoids descriptor limits
+    # for large numbers of files, at the cost of repeated opens/seeks.
+    my $mode = $fasta
+        ? 'fasta'
+        : $strict_phylip
+            ? 'phylip'
+            : 'plain';
+
+    for my $label (@labels) {
         if ($fasta) {
             print STDOUT ">$label\n";
-            $print_hash{$label} =~ s/\S{$lwidth}/$&\n/gs;
-            print STDOUT $print_hash{$label}, "\n";
         }
         elsif ($strict_phylip) {
-            my $phylip_label = phylip_label($label);
-            printf STDOUT "%-10s ", $phylip_label;
-            my $s = phylip_blocks($print_hash{$label});
-            print $s, "\n";
+            print STDOUT phylip_label($label), ' ';
         }
         else {
             printf STDOUT "%-${space}s ", $label;
-            print STDOUT $print_hash{$label}, "\n";
         }
+
+        # Keep the writer alive across partitions so wrapping is based
+        # on the concatenated sequence, not on individual input files.
+        my $writer = make_writer($mode, $line_width);
+
+        for my $input (@inputs) {
+            if (exists $input->{records}{$label}) {
+                my $fh = open_input($input->{path});
+
+                stream_sequence(
+                    $fh,
+                    $input,
+                    $label,
+                    $writer->{put},
+                    $chunk_size,
+                );
+
+                close_input($fh, $input->{path});
+            }
+            elsif ($selection eq 'union') {
+                stream_gaps(
+                    $input->{nchar},
+                    $writer->{put},
+                    $chunk_size,
+                );
+            }
+            elsif ($selection eq 'intersection') {
+                # This would indicate an internal metadata error.
+                die
+                    "Error: Selected intersection label '$label' ",
+                    "is missing from '$input->{path}'\n";
+            }
+
+            # In legacy default mode, missing segments are skipped,
+        }
+
+        $writer->{finish}->();
     }
 }
-else { # default: phyml interleaved, file by file
-    my $did_first = 0;
-    foreach my $file (@infiles) {
-        die "\n\nError: $file not in HoH\n" unless exists(${HoH}{$file});
-        $end_count = $nt_counter + ${HoH}{$file}{'nchars'} - 1;
-        if ($basename) {
-            my $f = basename($file, $basename);
-            print STDERR "$f = $nt_counter-$end_count\n";
-        }
-        else {
-            print STDERR "$file = $nt_counter-$end_count\n";
-        }
-        $nt_counter = $nt_counter + ${HoH}{$file}{'nchars'};
-        my @seq_ids = ();
-        if ($intersect) {
-            @seq_ids = @intersect_labels;
-        }
-        else {
-            @seq_ids = sort keys %{$HoH{$file}{'seqs'}};
-        }
-        foreach my $seqid (@seq_ids) {
-            if ($strict_phylip) {
-                my $phylip_seqid = phylip_label($seqid);
-                print STDOUT $phylip_seqid unless $did_first;
+else {
+    # Interleaved: each input alignment is one output block.
+    my $first_block = 1;
+
+    for my $input (@inputs) {
+        my $fh = open_input($input->{path});
+
+        # Preserve the original default behavior when labels differ:
+        # each block uses that input file's own sorted labels.
+        my @block_labels = $selection eq 'legacy'
+            ? sort keys %{ $input->{records} }
+            : @labels;
+
+        for my $label (@block_labels) {
+            if ($first_block) {
+                if ($strict_phylip) {
+                    print STDOUT phylip_label($label);
+                }
+                else {
+                    printf STDOUT "%-${space}s ", $label;
+                }
+            }
+
+            my $put = sub { print STDOUT $_[0]; };
+
+            if (exists $input->{records}{$label}) {
+                stream_sequence(
+                    $fh,
+                    $input,
+                    $label,
+                    $put,
+                    $chunk_size,
+                );
+            }
+            elsif ($selection eq 'union') {
+                stream_gaps($input->{nchar}, $put, $chunk_size);
             }
             else {
-                printf STDOUT "%-${space}s ", $seqid unless $did_first;
+                die
+                    "Error: Selected label '$label' ",
+                    "is missing from '$input->{path}'\n";
             }
-            ## Print sequence
-            ## TODO: phylip strict printing of sequence in blocks of 10
-            ## TODO: print length of 60
-            print STDOUT "$HoH{$file}{'seqs'}{$seqid}\n";
+
+            print STDOUT "\n";
         }
-        print "\n";
-        $did_first = 1;
+
+        close_input($fh, $input->{path});
+        print STDOUT "\n";
+        $first_block = 0;
     }
 }
 
-print STDERR "\nEnd of script.\n\n" if ($verbose);
+# Flush and report output errors, including a failure detected on close.
+close STDOUT or die "Error: Could not close STDOUT: $!\n";
 
+print STDERR "\nEnd of script.\n\n" if $verbose;
+exit(0);
 
-#===  FUNCTION  ================================================================
-#         NAME:  aligned
-#      VERSION:  08/31/2015 07:05:54 PM
-#  DESCRIPTION:  ???
-#   PARAMETERS:  ref to hash with seqs
-#      RETURNS:  0 if aligned, array with names and lengths of the first encountered
-#                seqs of unequal length otherwise.
-#                "Sequences in $infile are not all of the same length ($lname is $length, $name is $l)"
-#         TODO:  ???
-#===============================================================================
-sub aligned {
+#---------------------------------------------------------------------------
+# Open inputs in raw mode so tell/seek/read all use byte offsets.
+# Inputs must be regular, seekable files.
+#---------------------------------------------------------------------------
+sub open_input {
+    my ($path) = @_;
 
-    my ($h_ref) = shift(@_);
+    open my $fh, '<:raw', $path
+        or die "Error: Could not open infile '$path': $!\n";
 
-    my $length;
-    my $lname;
-    my @aligned = ();
+    unless (-f $fh) {
+        close $fh;
+        die "Error: Input '$path' must be a regular, seekable file\n";
+    }
 
-    foreach my $name (keys %$h_ref) {
-        my $l = length($h_ref->{$name});
-        if (defined $length) {
-            if ($length != $l) {
-                @aligned = ($length, $lname, $name, $l);
-                last;
-            }
+    return $fh;
+}
+
+sub close_input {
+    my ($fh, $path) = @_;
+
+    close $fh
+        or die "Error: Could not close infile '$path': $!\n";
+}
+
+sub input_position {
+    my ($fh, $path) = @_;
+
+    my $position = tell($fh);
+    die "Error: Could not determine position in '$path': $!\n"
+        if $position < 0;
+
+    return $position;
+}
+
+#---------------------------------------------------------------------------
+# Pass 1: scan FASTA without retaining sequence data.
+#
+# Full header text is used as the label.
+# Sequence whitespace is removed consistently in both passes.
+#---------------------------------------------------------------------------
+sub scan_fasta {
+    my ($path) = @_;
+    my $fh = open_input($path);
+
+    my %records;
+    my $label;
+
+    while (1) {
+        my $line_start = input_position($fh, $path);
+
+        # Clear errno so EOF can be distinguished from a read error.
+        $! = 0;
+        my $line = <$fh>;
+
+        unless (defined $line) {
+            die "Error: Could not read infile '$path': $!\n" if $!;
+            last;
+        }
+
+        $line =~ s/\r?\n\z//;
+
+        if ($line =~ /^>(.*)\z/) {
+            my $new_label = $1;
+
+            die "Error: Empty FASTA header in '$path'\n"
+                unless $new_label =~ /\S/;
+
+            die "Error: Duplicate FASTA header '$new_label' in '$path'\n"
+                if exists $records{$new_label};
+
+            # Close the preceding record before starting the next.
+            $records{$label}{end} = $line_start
+                if defined $label;
+
+            $label = $new_label;
+            $records{$label} = {
+                start  => input_position($fh, $path),
+                length => 0,
+            };
+        }
+        elsif (defined $label) {
+            $line =~ s/\s+//g;
+            $records{$label}{length} += length($line);
+        }
+        elsif ($line =~ /\S/) {
+            die
+                "Error: Sequence data before the first FASTA header ",
+                "in '$path'\n";
+        }
+    }
+
+    $records{$label}{end} = input_position($fh, $path)
+        if defined $label;
+
+    close_input($fh, $path);
+
+    die "Error: Could not read FASTA sequences in '$path'\n"
+        unless keys %records;
+
+    my @labels = sort keys %records;
+    my $reference_label = $labels[0];
+    my $nchar = $records{$reference_label}{length};
+
+    for my $name (@labels) {
+        my $length = $records{$name}{length};
+
+        die "Error: No sequence for header '$name' in '$path'\n"
+            unless $length;
+
+        if ($length != $nchar) {
+            die
+                "Error: Expecting aligned input sequences.\n",
+                "Sequences in '$path' are not all of the same length:\n",
+                "$reference_label is $nchar, $name is $length\n";
+        }
+    }
+
+    return {
+        path    => $path,
+        nseq    => scalar(@labels),
+        nchar   => $nchar,
+        records => \%records,
+    };
+}
+
+#---------------------------------------------------------------------------
+# Pass 2: read only the indexed byte range, in bounded chunks.
+#
+# A sequence can span many lines, or be written on one very long line.
+# Neither case requires storing the full sequence during output.
+#---------------------------------------------------------------------------
+sub stream_sequence {
+    my ($fh, $input, $label, $put, $size) = @_;
+
+    my $record = $input->{records}{$label};
+    my $path = $input->{path};
+
+    seek($fh, $record->{start}, 0)
+        or die "Error: Could not seek in '$path': $!\n";
+
+    my $remaining = $record->{end} - $record->{start};
+    my $observed_length = 0;
+
+    while ($remaining > 0) {
+        my $wanted = $remaining > $size ? $size : $remaining;
+        my $chunk = '';
+
+        my $read = read($fh, $chunk, $wanted);
+
+        die "Error: Could not read infile '$path': $!\n"
+            unless defined $read;
+
+        die "Error: Unexpected end of file in '$path'; input may have changed\n"
+            if $read == 0;
+
+        $remaining -= $read;
+
+        $chunk =~ s/\s+//g;
+        $observed_length += length($chunk);
+
+        $put->($chunk) if length($chunk);
+    }
+
+    if ($observed_length != $record->{length}) {
+        die
+            "Error: Sequence length changed for '$label' in '$path'; ",
+            "do not modify inputs while the script is running\n";
+    }
+}
+
+#---------------------------------------------------------------------------
+# Stream missing data without constructing a full gap sequence.
+#---------------------------------------------------------------------------
+sub stream_gaps {
+    my ($length, $put, $size) = @_;
+
+    my $gaps = '-' x ($length > $size ? $size : $length);
+
+    while ($length > 0) {
+        my $take = $length > $size ? $size : $length;
+
+        if ($take == length($gaps)) {
+            $put->($gaps);
         }
         else {
-            $length = length($h_ref->{$name});
-            $lname  = $name;
-            @aligned = ($length);
+            $put->(substr($gaps, 0, $take));
         }
+
+        $length -= $take;
+    }
+}
+
+#---------------------------------------------------------------------------
+# Incremental sequence formatter.
+#
+# plain:  print chunks unchanged, then a newline
+# fasta:  wrap at the configured width
+# phylip: groups of 10, five groups on the first row, six thereafter
+#
+# The formatter buffers at most one FASTA line or PHYLIP group.
+#---------------------------------------------------------------------------
+sub make_writer {
+    my ($mode, $width) = @_;
+
+    if ($mode eq 'plain') {
+        return {
+            put    => sub { print STDOUT $_[0]; },
+            finish => sub { print STDOUT "\n"; },
+        };
     }
 
-    return @aligned;
+    my $buffer = '';
+    my $unit = $mode eq 'fasta' ? $width : 10;
 
-} # end of aligned
+    my $row = 0;
+    my $blocks_on_row = 0;
 
+    my $emit = sub {
+        my ($text) = @_;
 
-#===  FUNCTION  ================================================================
-#         NAME:  parse_fasta
-#      VERSION:  Mon 21 nov 2022 12:36:21
-#  DESCRIPTION:  ???
-#   PARAMETERS:  filename
-#      RETURNS:  hash ref
-#         TODO:
-#===============================================================================
-sub parse_fasta {
-
-    my ($infile) = @_;
-
-    my %seq_hash = ();
-    my $state = 0;
-    my $header = q{};
-    my @headers = ();
-
-    open my $INFILE, "<", $infile or die "Error: could not open infile '$infile' : $! \n";
-    while (<$INFILE>) {
-        chomp;
-        if (/\>(\S*.*)$/) {
-            $state = 1;
-            $header = $1;
-            push @headers, $header;
+        if ($mode eq 'fasta') {
+            print STDOUT $text, "\n";
+            return;
         }
-        elsif ($state == 1) {
-            $seq_hash{$header} .= $_;
+
+        my $row_limit = $row == 0 ? 5 : 6;
+
+        if ($blocks_on_row == $row_limit) {
+            print STDOUT "\n";
+            $row++;
+            $blocks_on_row = 0;
         }
-    }
-    close($INFILE);
-
-    if (! %seq_hash) {
-        die "Error: Could not read fasta sequences in file $infile\n";
-    }
-    foreach my $header (@headers) {
-        if (! exists $seq_hash{$header}) {
-            die "Error: Could not read sequence for header $header in file $infile\n";
+        elsif ($blocks_on_row > 0) {
+            print STDOUT ' ';
         }
+
+        print STDOUT $text;
+        $blocks_on_row++;
+    };
+
+    return {
+        put => sub {
+            # Consume the chunk in slices. Do not append the entire
+            # chunk to the formatting buffer.
+            my $offset = 0;
+            my $length = length($_[0]);
+
+            while ($offset < $length) {
+                my $take = $unit - length($buffer);
+                my $available = $length - $offset;
+                $take = $available if $available < $take;
+
+                $buffer .= substr($_[0], $offset, $take);
+                $offset += $take;
+
+                if (length($buffer) == $unit) {
+                    $emit->($buffer);
+                    $buffer = '';
+                }
+            }
+        },
+        finish => sub {
+            $emit->($buffer) if length($buffer);
+            $buffer = '';
+
+            # FASTA's emit already terminates each output line.
+            print STDOUT "\n" if $mode eq 'phylip';
+        },
+    };
+}
+
+#---------------------------------------------------------------------------
+# Partition coordinates retain input argument order.
+#---------------------------------------------------------------------------
+sub print_partitions {
+    my ($inputs, $suffix) = @_;
+
+    my $start = 1;
+
+    for my $input (@$inputs) {
+        my $end = $start + $input->{nchar} - 1;
+        my $name = $input->{path};
+
+        if (defined $suffix) {
+            $name = length($suffix)
+                ? basename($name, $suffix)
+                : basename($name);
+        }
+
+        print STDERR "$name = $start-$end\n";
+        $start = $end + 1;
     }
+}
 
-    return(\%seq_hash);
-
-} # end of parse_fasta
-
-
-#===  FUNCTION  ================================================================
-#         NAME:  phylip_label
-#      VERSION:  02/18/2013 04:43:00 PM
-#  DESCRIPTION:  manipulates input string to be of length 10, possibly padded
-#                with white space.
-#   PARAMETERS:  string
-#      RETURNS:  string with the length of 10
-#         TODO:  ???
-#===============================================================================
 sub phylip_label {
+    my ($label) = @_;
+    return sprintf("%-10s", substr($label, 0, 10));
+}
 
-    my ($string) = @_;
+sub max_label_length {
+    my ($labels) = @_;
 
-    if (length($string) > 10) {
-        $string = substr($string, 0, 10); # Truncate label!
-    }
-    else {
-        my $string_length = length($string);
-        my $pad = ' ' x ((10 - $string_length)); # Pad end with white space
-        $string = $string . $pad;
-    }
+    my $maximum = 0;
 
-    return($string);
-
-} # end of phylip_label
-
-
-#===  FUNCTION  ================================================================
-#         NAME:  phylip_blocks
-#      VERSION:  09/03/2015 10:35:12 PM
-#  DESCRIPTION:  return string in blocks of ten characters separated by spaces.
-#                No more than 6 blocks wide, and 5 for the first row (providing
-#                space to sequence label).
-#   PARAMETERS:  string
-#      RETURNS:  string
-#         TODO:  ???
-#===============================================================================
-sub phylip_blocks {
-
-    my ($string) = @_;
-
-    my $ret_seq = '';
-    my $first   = 1;
-    my $i       = 0;
-
-    my @foo = unpack("(A10)*", $string);
-
-    foreach my $p (@foo) {
-        $i++;
-        $ret_seq .= $p;
-        if ($i == 5) {
-            if ($first) {
-                $ret_seq .= "\n";
-                $first = 0;
-                $i = 0;
-            }
-            else {
-               $ret_seq .= ' ';
-            }
-        }
-        elsif ($i == 6) {
-            $ret_seq .= "\n" unless $first;
-            $i = 0;
-        }
-        else {
-            $ret_seq .= ' ';
-        }
+    for my $label (@$labels) {
+        my $length = length($label);
+        $maximum = $length if $length > $maximum;
     }
 
-    return $ret_seq;
+    return $maximum;
+}
 
-} # end of phylip_blocks
+__END__
 
-
-#===  POD DOCUMENTATION  =======================================================
-#      VERSION:  Mon 30 Sep 2024 13:38:57
-#  DESCRIPTION:  Documentation
-#         TODO:  ?
-#===============================================================================
 =pod
 
 =head1 NAME
 
 catfasta2phyml.pl -- Concatenate FASTA alignments to PHYML, PHYLIP, or FASTA format
 
-
 =head1 SYNOPSIS
 
 catfasta2phyml.pl [options] [files]
-
 
 =head1 OPTIONS
 
@@ -471,141 +681,166 @@ catfasta2phyml.pl [options] [files]
 
 =item B<-h, -?, --help>
 
-Print a brief help message and exits.
-
+Print a brief help message and exit.
 
 =item B<-m, --man>
 
-Prints the manual page and exits.
-
+Print the manual page and exit.
 
 =item B<-c, --concatenate>
 
-Concatenate files even when number of taxa differ among alignments.
-Missing data will be filled with all gap (-) sequences.
-
+Concatenate the union of labels across input files. Missing sequences are
+filled with gap (-) characters of the corresponding alignment length.
+This applies even when input files contain equal numbers of taxa.
 
 =item B<-i, --intersect>
 
-Concatenate sequences for sequence labels occuring in all input files
-(intersection).
+Concatenate only sequences whose labels occur in every input file.
 
+If no labels occur in all files, print a warning to STDERR and exit with
+status 1 without printing alignment data.
+
+This option takes precedence over B<--concatenate> if both are supplied.
 
 =item B<-f, --fasta>
 
-Print output in FASTA format (default is PHYML format).
-
+Print FASTA output, wrapped at 60 characters per line. This option takes
+precedence over PHYLIP formatting.
 
 =item B<-p, --phylip>
 
-Print output in a strict PHYLIP format.
-See L<http://evolution.genetics.washington.edu/phylip/doc/sequence.html>.
+Use ten-character PHYLIP labels, truncated or padded as necessary.
+Labels that collide after truncation cause an error.
 
-B<Note:> The current output is not entirely strict for the
-interleaved format. Left to do is to efficiently print sequences
-in blocks of 10 characters. The sequential PHYLIP format works,
-on the other hand (use B<-s> in combination with B<-p>).
+Sequential output uses groups of ten characters, with five groups on
+the first row and six on subsequent rows.
 
+Note: Interleaved output is not fully strict PHYLIP (see
+L<https://phylipweb.github.io/phylip/doc/sequence.html>).
+
+Use B<-s -p> for sequential PHYLIP output.
 
 =item B<-s, --sequential>
 
-Print output in sequential format (default is interleaved).
-
+Print sequential output. The default is interleaved output.
 
 =item B<-b, --basename=suffix>
 
-Ensure the basename is used as partition definition. If the provided C<suffix>
-(required) matches the file suffix, it will be removed from the output string.
-
-B<Note:> If the suffix it to be kept, one may use this format: C<--basename=' '> 
-(basically providing a string that will not match the file suffix).
-
+Use file basenames in partition definitions. Remove the supplied suffix
+(optional) when it matches the end of the basename.
 
 =item B<-v, --verbose>
 
-Be verbose by showing some useful output. See the combination with B<-n>.
-
+Print progress and selection information to STDERR.
 
 =item B<-n, --noprint>
 
-Do not print the concatenation, just check if all files have the same
-sequence lables and lengths. Program returns 1 on exit.
-See also the combination with B<-v>.
+Validate input alignments and the requested label selection without
+printing alignment data or partition definitions.
+
+Return status 0 on success, or a nonzero status on failure.
+
+Without B<-c> or B<-i>, validation preserves the original equal-taxon-count
+rule; it does not require identical label sets.
 
 =item B<-V, --version>
 
-Print version number and exit.
+Print the version number and exit.
 
 =back
 
 =head1 DESCRIPTION
 
-B<catfasta2phyml.pl> will concatenate FASTA alignments to one file
-(interleaved PHYML or FASTA format) after checking that all sequences
-are aligned (of same length). If there are sequence labels that are not
-present in all files, a warning will be issued. Sequenced can, however,
-still be concatenated (and missing sequences be filled with missing data
-(gaps)) if the argument B<--concatenate> is used.
+Each input file must contain aligned FASTA sequences: all sequences within
+that file must have the same nonzero length.
 
-In addition, only sequences with sequence labels present in all files
-(the intersection) can be printed using the B<--intersect> argument.
+The first pass records labels, sequence lengths, and byte ranges. Sequence
+data are not retained. During output, the script seeks to these ranges and
+streams sequence data in bounded chunks.
 
-The program prints the concatenated data to B<STDOUT>. A table with
-information about partitions is printed to B<STDERR>. Example: 
+FASTA headers must start with C<E<gt>>. The complete header text following
+that character is used as the sequence label. Duplicate labels within an
+input file and empty headers or sequences are rejected.
+
+Whitespace in sequence data, including CRLF line endings, is removed.
+
+Inputs must be regular, seekable, uncompressed files. Standard input,
+pipes, and process substitutions are not supported. Input files must not
+change while the script runs.
+
+B<--intersect> retains only labels present in all input files.
+B<--concatenate> retains all labels and pads missing segments with gaps.
+
+Without either option files with equal numbers of taxa are accepted even when
+their labels differ.  Interleaved blocks use each file's own sorted labels.
+Sequential and FASTA output omit missing segments rather than padding them.
+Consequently, default-mode output for differing label sets can have
+inconsistent labels or sequence lengths. Use B<--concatenate> for gap-padded
+output.
+
+Alignment data are printed to STDOUT. Partition definitions are printed
+to STDERR in input argument order:
 
     file1.fas = 1-625
     file2.fas = 626-1019
     file3.fas = 1020-2061
-    file4.fas = 2062-3364
-    file5.fas = 3365-3796
 
+=head1 MEMORY AND I/O
+
+Stored metadata grows with the number of input records and their labels,
+not with the total number of sequence characters.
+
+The metadata scan reads one input line at a time, so its temporary memory
+depends on the longest input line. The output pass reads chunks of at most
+64 KiB; formatting buffers hold at most 60 characters.
+
+Sequential and FASTA output reopen input files as needed for each label.
+Only one input filehandle is open at a time. Interleaved output opens each
+file once during the output pass.
 
 =head1 USAGE
 
-To concatenate fasta files to a phyml readable format:
+Default interleaved output:
 
-    catfasta2phyml.pl file1.fas file2.fas > out.phy
-    catfasta2phyml.pl *.fas > out.phy 2> partitions.txt
-    catfasta2phyml.pl --sequential *.fas > out.phy
-    catfasta2phyml.pl --verbose *.fas > out.phy
+    catfasta2phyml.pl file1.fas file2.fas > out.phy 2> partitions.txt
 
-To concatenate fasta files to fasta format:
+Sequential output:
 
-    catfasta2phyml.pl -f file1.fas file2.fas > out.fasta
-    catfasta2phyml.pl -f *.fas > out.fasta
+    catfasta2phyml.pl -s *.fas > out.phy
 
-To check fasta alignments:
+Sequential PHYLIP output:
 
-    catfasta2phyml.pl --noprint --verbose *.fas
+    catfasta2phyml.pl -sp *.fas > out.phy
+
+FASTA output with missing data padded:
+
+    catfasta2phyml.pl -cf *.fas > out.fasta
+
+Labels present in every input file:
+
+    catfasta2phyml.pl -i *.fas > out.phy
+    catfasta2phyml.pl -if *.fas > out.fasta
+
+Validation:
+
     catfasta2phyml.pl -nv *.fas
-    catfasta2phyml.pl -n *.fas
 
-To concatenate fasta files, while filling in missing taxa:
+Basename and suffix removal:
 
-    catfasta2phyml.pl --concatenate --verbose *.fas
-
-To concatenate sequences for sequence labels occuring in all files:
-
-    catfasta2phyml.pl --intersect *.fas
-
-To ensure basename as name and suffix removal in partition definition:
-
-    catfasta2phyml.pl -b.fas dat/file1.fas dat/file2.fas > out.phy
-
+    catfasta2phyml.pl -b dat/file1.fas dat/file2.fas > out.phy
+    catfasta2phyml.pl -b'.fas' dat/file1.fas dat/file2.fas > out.phy
 
 =head1 AUTHOR
 
 Written by Johan A. A. Nylander
 
-
 =head1 DEPENDENCIES
 
-Uses Perl modules Getopt::Long, Pod::Usage, File::Basename;
-
+Uses Perl modules Getopt::Long, Pod::Usage, and File::Basename.
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright (c) 2010-2024 Johan Nylander
+Copyright (c) 2010-2026 Johan Nylander
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -625,14 +860,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-
 =head1 DOWNLOAD
 
 https://github.com/nylander/catfasta2phyml
 
-
 =cut
-
-
-__END__
-
